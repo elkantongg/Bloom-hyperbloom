@@ -22,8 +22,12 @@ Making plans with friends dies in the group chat: "when's everyone free?", "idk,
 ## Tech
 Plain HTML, CSS and JavaScript — no build step, no backend. Friends are simulated in demo mode so a single person can experience the live, multi-person flow.
 
-Run locally:
+Run locally (from this folder):
+```
+npm start
+```
+or, without npm:
 ```
 python3 -m http.server 5178
 ```
-then open http://localhost:5178.
+then open http://localhost:5178. Press Ctrl+C in the terminal to stop.
