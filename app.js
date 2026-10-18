@@ -369,6 +369,7 @@
           '<p class="eyebrow">🌸 For friends, families & flatmates</p>' +
           '<h1>Plans that <em>actually</em> happen.</h1>' +
           '<p class="lede">Skip the 200-message group chat. Paint when you’re free, swipe on where to go, and watch your plan bloom.</p>' +
+          myGroupsHTML() +
           '<form class="start-card" id="startForm" novalidate>' +
             '<div class="field"><label for="planTitle">What’s the plan?</label>' +
               '<input id="planTitle" name="title" value="' + esc(state.title) + '" maxlength="40" autocomplete="off" required></div>' +
@@ -379,7 +380,7 @@
               '<span class="hint" id="pwHint">Friends need this to join. Share it separately from the link (at least 4 characters).</span></div>' +
             '<p class="form-error" id="startError" role="alert"></p>' +
             '<button class="btn" type="submit" id="createBtn">Create group & get invite link →</button>' +
-            '<button class="btn ghost" type="button" id="demoBtn">Just looking? Try the demo with sample friends</button>' +
+            '<button class="btn ghost" type="button" id="demoBtn">Just looking? Try a demo (nothing is saved)</button>' +
           '</form>' +
         '</div>' +
         '<div class="hero-art" aria-hidden="true">' +
@@ -394,6 +395,15 @@
         '<li><span class="ico" aria-hidden="true">👆</span><h3>Swipe on places</h3><p>Yes, maybe, or nope. No debates, no “idk, you pick”. Accessibility info is on every card.</p></li>' +
         '<li><span class="ico" aria-hidden="true">🌸</span><h3>Watch it bloom</h3><p>Each friend is a petal. When everyone’s in, you get one clear plan to add to your calendar.</p></li>' +
       '</ol>';
+  }
+  function myGroupsHTML() {
+    const all = sessions();
+    const ids = Object.keys(all);
+    if (!ids.length) return '';
+    return '<section class="my-groups" aria-labelledby="myGroupsTitle"><h2 id="myGroupsTitle">Your groups</h2><ul>' +
+      ids.map((id) => '<li><span class="mg-title">' + esc(all[id].title || 'Group ' + id) + '</span>' +
+        '<a class="btn small" href="#/join/' + encodeURIComponent(id) + '">Continue →</a></li>').join('') +
+      '</ul><p class="hint">Saved on this device. Demo mode never changes these.</p></section>';
   }
   function heroMark() {
     // Three schedules drifting together; the spark is where everyone overlaps.
@@ -1073,6 +1083,7 @@
     state.me = { id: res.memberId, name: 'You', color: '#2F6FEB', avail: new Set(), votes: {}, joined: true };
     state.pickRun = state.pickPlace = null;
     applyState(res.state, true);
+    saveSession(res.groupId, Object.assign({}, state.session, { title: state.group.title }));
     startSync();
   }
 
