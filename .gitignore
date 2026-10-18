@@ -20,9 +20,10 @@ __pycache__/
 # Node
 node_modules/
 
-data/*.db
-data/*.db-wal
-data/*.db-shm
-data/*.db-journal
 .env
 .env.*
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
