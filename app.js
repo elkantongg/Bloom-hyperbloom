@@ -1,6 +1,6 @@
 /* Bloom — group plans that actually happen.
-   Frontend-only prototype: friends are simulated so the live, multi-person
-   experience can be demoed by a single person. */
+   Live mode: groups, invites and votes are stored by server.py (SQLite).
+   Demo mode: friends are simulated so one person can try the whole flow. */
 (function () {
   'use strict';
 
@@ -16,16 +16,28 @@
 
   // ---------- Calendar setup ----------
   const HOURS = Array.from({ length: 12 }, (_, i) => 10 + i); // 10am .. 9pm slots
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const DAYS = Array.from({ length: 7 }, (_, i) => { const d = new Date(today); d.setDate(d.getDate() + i); return d; });
-  const key = (di, h) => di + '-' + h;
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  const todayYmd = () => ymd(new Date());
+  let DAYS = [];
+  // A group plans one week, starting on the day it was created.
+  function setWeek(startYmd) {
+    const p = (startYmd || todayYmd()).split('-').map(Number);
+    DAYS = Array.from({ length: 7 }, (_, i) => new Date(p[0], p[1] - 1, p[2] + i));
+  }
+  setWeek(null);
+  const key = (di, h) => ymd(DAYS[di]) + '@' + h;
+  const relDay = (di) => {
+    const t = new Date(); t.setHours(0, 0, 0, 0);
+    return Math.round((DAYS[di] - t) / 86400000);
+  };
   const fmtHour = (h) => (h % 12 || 12) + (h < 12 || h === 24 ? 'am' : 'pm');
   const fmtRange = (a, b) => {
     const sameHalf = (a < 12) === (b < 12 || b === 24);
     return (sameHalf ? String(a % 12 || 12) : fmtHour(a)) + '–' + fmtHour(b);
   };
-  const dayShort = (di) => (di === 0 ? 'Today' : DAYS[di].toLocaleDateString(undefined, { weekday: 'short' }));
-  const dayLong = (di) => (di === 0 ? 'Today' : di === 1 ? 'Tomorrow' : DAYS[di].toLocaleDateString(undefined, { weekday: 'long' }));
+  const dayShort = (di) => (relDay(di) === 0 ? 'Today' : DAYS[di].toLocaleDateString(undefined, { weekday: 'short' }));
+  const dayLong = (di) => (relDay(di) === 0 ? 'Today' : relDay(di) === 1 ? 'Tomorrow' : DAYS[di].toLocaleDateString(undefined, { weekday: 'long' }));
   const dateLong = (di) => DAYS[di].toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 
   // ---------- Demo data ----------
@@ -56,6 +68,10 @@
   // ---------- State ----------
   const state = {
     step: 'home',
+    mode: 'demo',        // 'demo' (simulated friends) or 'live' (real group on the server)
+    group: null,         // { id, title, host, startDate } in live mode
+    session: null,       // { memberId, token } in live mode
+    joinId: null,        // group id from an invite link
     title: 'Weekend hangout',
     me: { id: 'me', name: 'You', color: '#2F6FEB', avail: new Set(), votes: {}, joined: true },
     friends: FRIENDS.map((f) => Object.assign({}, f, { avail: new Set(), votes: {}, joined: false })),
@@ -232,7 +248,9 @@
           '<ul class="people" id="people"></ul>' +
         '</div>' +
       '</div>' +
-      '<p class="demo-note">Demo mode: Maya, Jun, Priya and Sam are simulated friends so you can see Bloom update live.</p>' +
+      '<p class="demo-note">' + (state.mode === 'live'
+        ? '🟢 Live group · changes from everyone appear within a few seconds.'
+        : 'Demo mode: Maya, Jun, Priya and Sam are simulated friends so you can see Bloom update live.') + '</p>' +
     '</aside>';
   }
   function statusOf(p) {
@@ -269,28 +287,35 @@
 
   // ---------- Router ----------
   function canGo(step) {
-    if (step === 'home' || step === 'times') return true;
+    if (step === 'home' || step === 'join') return true;
+    if (step === 'times') return state.mode === 'demo' || !!state.session;
     if (step === 'places') return state.me.avail.size > 0;
     if (step === 'bloom') return state.deckIndex >= PLACES.length;
     return false;
   }
   function go(step, push) {
-    if (!canGo(step)) step = canGo('places') ? 'places' : 'times';
+    if (!canGo(step)) step = !canGo('times') ? 'home' : canGo('places') ? 'places' : 'times';
     state.step = step;
     if (push !== false) {
-      const h = step === 'home' ? '#/' : '#/' + step;
+      const h = step === 'home' ? '#/' : step === 'join' ? '#/join/' + state.joinId : '#/' + step;
       if (location.hash !== h) history.pushState(null, '', h);
     }
     render();
   }
-  window.addEventListener('popstate', () => {
-    const s = location.hash.replace('#/', '') || 'home';
-    go(s, false);
-  });
+  window.addEventListener('popstate', () => route(false));
+  function route(push) {
+    const parts = location.hash.replace(/^#\/?/, '').split('/');
+    if (parts[0] === 'join' && parts[1]) {
+      openInvite(decodeURIComponent(parts[1]));
+      return;
+    }
+    const s = parts[0] || 'home';
+    go(['home', 'times', 'places', 'bloom'].indexOf(s) > -1 ? s : 'home', push);
+  }
 
   function updateStepper() {
     const order = ['times', 'places', 'bloom'];
-    $('.topbar').classList.toggle('is-home', state.step === 'home');
+    $('.topbar').classList.toggle('is-home', state.step === 'home' || state.step === 'join');
     $$('#stepper button').forEach((b) => {
       const s = b.dataset.step;
       b.disabled = !canGo(s);
@@ -307,16 +332,19 @@
     clearTimers('deck');
     const main = $('#main');
     if (state.step === 'home') main.innerHTML = homeHTML();
+    if (state.step === 'join') main.innerHTML = joinHTML();
     if (state.step === 'times') main.innerHTML = timesHTML();
     if (state.step === 'places') main.innerHTML = placesHTML();
     if (state.step === 'bloom') main.innerHTML = bloomHTML();
     document.title = {
       home: 'Bloom — plans that actually happen',
+      join: 'You’re invited · Bloom',
       times: 'When are you free? · Bloom',
       places: 'Where should we go? · Bloom',
       bloom: 'Your plan · Bloom',
     }[state.step];
     if (state.step === 'home') bindHome();
+    if (state.step === 'join') bindJoin();
     if (state.step === 'times') bindTimes();
     if (state.step === 'places') bindPlaces();
     if (state.step === 'bloom') bindBloom();
@@ -341,17 +369,17 @@
           '<p class="eyebrow">🌸 For friends, families & flatmates</p>' +
           '<h1>Plans that <em>actually</em> happen.</h1>' +
           '<p class="lede">Skip the 200-message group chat. Paint when you’re free, swipe on where to go, and watch your plan bloom.</p>' +
-          '<form class="start-card" id="startForm">' +
+          '<form class="start-card" id="startForm" novalidate>' +
             '<div class="field"><label for="planTitle">What’s the plan?</label>' +
-              '<input id="planTitle" name="title" value="' + esc(state.title) + '" maxlength="40" autocomplete="off"></div>' +
+              '<input id="planTitle" name="title" value="' + esc(state.title) + '" maxlength="40" autocomplete="off" required></div>' +
             '<div class="field"><label for="myName">Your name</label>' +
-              '<input id="myName" name="name" placeholder="e.g. Alex" maxlength="20" autocomplete="given-name" value="' + (state.me.name === 'You' ? '' : esc(state.me.name)) + '"></div>' +
-            '<div class="field"><span class="label" id="whoLbl">Who’s invited</span>' +
-              '<div class="friend-chips" aria-labelledby="whoLbl">' +
-                state.friends.map((f) => '<span class="friend-chip"><span class="av" style="--c:' + f.color + '" aria-hidden="true">' + f.name[0] + '</span>' + f.name + '</span>').join('') +
-              '</div>' +
-              '<span class="hint">Demo friends — they’ll “reply” live so you can see how Bloom works.</span></div>' +
-            '<button class="btn" type="submit">Start planning →</button>' +
+              '<input id="myName" name="name" placeholder="e.g. Alex" maxlength="20" autocomplete="given-name" required value="' + (state.me.name === 'You' ? '' : esc(state.me.name)) + '"></div>' +
+            '<div class="field"><label for="groupPw">Group password</label>' +
+              '<input id="groupPw" name="password" type="password" minlength="4" maxlength="64" autocomplete="new-password" required aria-describedby="pwHint">' +
+              '<span class="hint" id="pwHint">Friends need this to join. Share it separately from the link (at least 4 characters).</span></div>' +
+            '<p class="form-error" id="startError" role="alert"></p>' +
+            '<button class="btn" type="submit" id="createBtn">Create group & get invite link →</button>' +
+            '<button class="btn ghost" type="button" id="demoBtn">Just looking? Try the demo with sample friends</button>' +
           '</form>' +
         '</div>' +
         '<div class="hero-art" aria-hidden="true">' +
@@ -386,13 +414,31 @@
       });
       io.observe(art);
     }
-    $('#startForm').addEventListener('submit', (e) => {
+    $('#startForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const t = $('#planTitle').value.trim() || 'Weekend hangout';
+      const n = $('#myName').value.trim();
+      const pw = $('#groupPw').value;
+      const err = $('#startError');
+      if (!n) { err.textContent = 'Add your name so friends know who’s inviting them.'; $('#myName').focus(); return; }
+      if (pw.length < 4) { err.textContent = 'Pick a group password with at least 4 characters.'; $('#groupPw').focus(); return; }
+      const btn = $('#createBtn');
+      btn.disabled = true; btn.textContent = 'Creating your group…';
+      try {
+        const res = await api('POST', '/groups', { title: t, name: n, password: pw, startDate: todayYmd() });
+        store.set('bloom.name', n);
+        startLive(res);
+        go('times');
+        toast(null, 'Group created — copy the invite link to share');
+      } catch (ex) {
+        err.textContent = ex.message;
+        btn.disabled = false; btn.textContent = 'Create group & get invite link →';
+      }
+    });
+    $('#demoBtn').addEventListener('click', () => {
       const t = $('#planTitle').value.trim();
       const n = $('#myName').value.trim();
-      state.title = t || 'Weekend hangout';
-      state.me.name = n || 'You';
-      store.set('bloom.name', state.me.name === 'You' ? '' : state.me.name);
+      startDemo(t || 'Weekend hangout', n || 'You');
       go('times');
     });
   }
@@ -419,8 +465,11 @@
       '<div class="page-head"><h1>When are you free?</h1>' +
         '<p id="gridHelp">Click and drag to paint the hours that work for you. Brighter squares mean more of the group is free. ' +
         '<span class="sr-only">Keyboard: arrow keys move, Space or Enter toggles an hour, Shift plus an arrow paints as you move.</span></p></div>' +
-      '<div class="invite"><span aria-hidden="true">🔗</span><span class="grow">Invite link for <strong>' + esc(state.title) + '</strong> <code>bloom.plan/' + esc(slug(state.title)) + '</code></span>' +
-        '<button type="button" class="btn small ghost" id="copyLink">Copy link</button></div>' +
+      (state.mode === 'live'
+        ? '<div class="invite"><span aria-hidden="true">🔗</span><span class="grow">Invite friends to <strong>' + esc(state.title) + '</strong> <code>' + esc(inviteLink()) + '</code>' +
+            '<small class="invite-note">Send the password separately — they’ll need it to join.</small></span>' +
+            '<button type="button" class="btn small ghost" id="copyLink">Copy link</button></div>'
+        : '<div class="invite"><span aria-hidden="true">🔗</span><span class="grow">Demo group <strong>' + esc(state.title) + '</strong> — <a href="#/" class="link-btn">create a real group</a> to invite friends.</span></div>') +
       '<div class="panel">' +
         '<div class="grid-tools">' +
           '<button type="button" class="chip-btn" data-fill="evenings">🌙 Evenings</button>' +
@@ -582,7 +631,7 @@
       announce(mode === 'clear' ? 'Cleared your hours.' : 'Added ' + (mode === 'evenings' ? 'evenings' : 'weekend afternoons') + '. ' + state.me.avail.size + ' hours marked free.');
     }));
 
-    $('#copyLink').addEventListener('click', () => copy(location.origin === 'null' || location.protocol === 'file:' ? 'https://bloom.plan/' + slug(state.title) : location.href.split('#')[0] + '#/', 'Invite link copied'));
+    if ($('#copyLink')) $('#copyLink').addEventListener('click', () => copy(inviteLink(), 'Invite link copied — remember to share the password'));
     $('#toPlaces').addEventListener('click', () => go('places'));
 
     updateAllCells();
@@ -596,12 +645,12 @@
     if (focus) el.focus();
   }
   function afterMineChanged() {
-    store.set('bloom.avail', JSON.stringify(Array.from(state.me.avail)));
+    if (state.mode === 'live') saveSoon({ avail: Array.from(state.me.avail) });
     refresh();
   }
 
   function simulateTimes() {
-    if (state.sim.times) return;
+    if (state.mode !== 'demo' || state.sim.times) return;
     state.sim.times = true;
     state.friends.forEach((f, i) => {
       later('sim', () => {
@@ -720,6 +769,7 @@
     const pl = PLACES[state.deckIndex];
     const card = $('#deck .card[data-depth="0"]');
     state.me.votes[pl.id] = v;
+    if (state.mode === 'live') saveSoon({ votes: Object.assign({}, state.me.votes) });
     const word = v === 1 ? 'Yes' : v === 0 ? 'Maybe' : 'Nope';
     if (card) {
       card.style.transform = '';
@@ -729,7 +779,8 @@
     }
     later('deck', () => {
       voting = false;
-      state.deckIndex++;
+      const nextIdx = PLACES.findIndex((p) => !(p.id in state.me.votes));
+      state.deckIndex = nextIdx === -1 ? PLACES.length : nextIdx;
       renderDeck();
       refresh();
       const next = PLACES[state.deckIndex];
@@ -783,7 +834,7 @@
   });
 
   function simulateVotes() {
-    if (state.sim.votes) return;
+    if (state.mode !== 'demo' || state.sim.votes) return;
     state.sim.votes = true;
     state.friends.forEach((f, i) => {
       PLACES.forEach((pl, j) => {
@@ -888,6 +939,12 @@
   }
 
   function restart() {
+    stopSync();
+    state.mode = 'demo'; state.group = null; state.session = null;
+    store.set('bloom.current', '');
+    setWeek(null);
+    state.friends = FRIENDS.map((f) => Object.assign({}, f, { avail: new Set(), votes: {}, joined: false }));
+    state.me = { id: 'me', name: state.me.name, color: '#2F6FEB', avail: new Set(), votes: {}, joined: true };
     clearTimers('sim');
     state.me.avail.clear();
     state.me.votes = {};
@@ -895,7 +952,6 @@
     state.sim = { times: false, votes: false };
     state.deckIndex = 0;
     state.pickRun = state.pickPlace = null;
-    store.set('bloom.avail', '[]');
     go('home');
   }
 
@@ -974,9 +1030,230 @@
   });
   syncThemeBtn();
 
+  // ---------- Live groups (server.py + SQLite) ----------
+  async function api(method, path, body) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (state.session) headers.Authorization = 'Bearer ' + state.session.token;
+    let res;
+    try {
+      res = await fetch('/api' + path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined });
+    } catch (e) {
+      throw Object.assign(new Error('Can’t reach the Bloom server. Is it running? (npm start)'), { status: 0 });
+    }
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* not JSON */ }
+    if (!res.ok || !data) {
+      const msg = data && data.error ? data.error
+        : res.status === 404 || res.status === 501 ? 'The Bloom server isn’t running — start it with npm start.'
+        : 'Something went wrong (' + res.status + ').';
+      throw Object.assign(new Error(msg), { status: res.status });
+    }
+    return data;
+  }
+
+  function sessions() {
+    try { return JSON.parse(store.get('bloom.sessions') || '{}') || {}; } catch (e) { return {}; }
+  }
+  function saveSession(groupId, sess) {
+    const all = sessions();
+    if (sess) all[groupId] = sess; else delete all[groupId];
+    store.set('bloom.sessions', JSON.stringify(all));
+  }
+  function inviteLink() {
+    return location.origin + location.pathname + '#/join/' + encodeURIComponent(state.group ? state.group.id : '');
+  }
+
+  function startLive(res) {
+    clearTimers('sim');
+    state.mode = 'live';
+    state.session = { memberId: res.memberId, token: res.token };
+    saveSession(res.groupId, state.session);
+    store.set('bloom.current', res.groupId);
+    state.friends = [];
+    state.me = { id: res.memberId, name: 'You', color: '#2F6FEB', avail: new Set(), votes: {}, joined: true };
+    state.pickRun = state.pickPlace = null;
+    applyState(res.state, true);
+    startSync();
+  }
+
+  function startDemo(title, name) {
+    stopSync();
+    state.mode = 'demo'; state.group = null; state.session = null;
+    store.set('bloom.current', '');
+    setWeek(null);
+    state.title = title;
+    state.me = { id: 'me', name: name, color: '#2F6FEB', avail: new Set(), votes: {}, joined: true };
+    state.friends = FRIENDS.map((f) => Object.assign({}, f, { avail: new Set(), votes: {}, joined: false }));
+    state.sim = { times: false, votes: false };
+    state.deckIndex = 0;
+    state.pickRun = state.pickPlace = null;
+  }
+
+  // Merge the server's copy of the group into local state.
+  let pendingSave = null;
+  function applyState(data, first) {
+    const g = data.group;
+    if (!state.group || state.group.startDate !== g.startDate) setWeek(g.startDate);
+    state.group = g;
+    state.title = g.title;
+    const known = new Set(state.friends.map((f) => f.id));
+    const toPerson = (m) => ({ id: m.id, name: m.name, color: m.color, avail: new Set(m.avail), votes: m.votes, joined: true, isHost: m.isHost });
+    const mine = data.members.find((m) => m.id === data.me);
+    if (mine) {
+      const me = toPerson(mine);
+      // Don't let an older server copy overwrite edits that are still being saved.
+      if (pendingSave || !first && state.me.id === me.id) { me.avail = state.me.avail; me.votes = state.me.votes; }
+      if (first) { me.avail = new Set(mine.avail); me.votes = mine.votes; }
+      state.me = me;
+    }
+    state.friends = data.members.filter((m) => m.id !== data.me).map(toPerson);
+    if (!first) {
+      state.friends.filter((f) => !known.has(f.id)).forEach((f) => {
+        toast(f, f.name + ' joined ' + state.title);
+        announce(f.name + ' joined the group.');
+      });
+    }
+    const firstUnvoted = PLACES.findIndex((p) => !(p.id in state.me.votes));
+    state.deckIndex = firstUnvoted === -1 ? PLACES.length : firstUnvoted;
+  }
+
+  let saveTimer = null;
+  function saveSoon(patch) {
+    pendingSave = Object.assign(pendingSave || {}, patch);
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushSave, 400);
+  }
+  async function flushSave() {
+    if (!pendingSave || !state.group) return;
+    const patch = pendingSave;
+    try {
+      await api('PUT', '/groups/' + encodeURIComponent(state.group.id) + '/me', patch);
+      if (pendingSave === patch) pendingSave = null;
+    } catch (e) {
+      toast(null, 'Couldn’t save — retrying…');
+      saveTimer = setTimeout(flushSave, 3000);
+    }
+  }
+
+  // Poll every 3s while the tab is visible; pause when hidden to save battery/CPU.
+  let syncTimer = null;
+  async function pull() {
+    if (state.mode !== 'live' || !state.group || document.hidden) return;
+    try {
+      const data = await api('GET', '/groups/' + encodeURIComponent(state.group.id) + '/state');
+      applyState(data, false);
+      refresh();
+    } catch (e) {
+      if (e.status === 401 || e.status === 404) { stopSync(); toast(null, e.message); }
+    }
+  }
+  function startSync() {
+    stopSync();
+    syncTimer = setInterval(pull, 3000);
+  }
+  function stopSync() {
+    clearInterval(syncTimer);
+    syncTimer = null;
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });
+
+  async function resumeLive() {
+    const gid = store.get('bloom.current');
+    const sess = gid && sessions()[gid];
+    if (!sess) return;
+    state.session = sess;
+    try {
+      const data = await api('GET', '/groups/' + encodeURIComponent(gid) + '/state');
+      startLive({ groupId: gid, memberId: sess.memberId, token: sess.token, state: data });
+    } catch (e) {
+      state.session = null;
+      if (e.status === 401 || e.status === 404) { saveSession(gid, null); store.set('bloom.current', ''); }
+    }
+  }
+
+  // ---------- Invite / join ----------
+  let invite = null;
+  async function openInvite(gid) {
+    state.joinId = gid;
+    const sess = sessions()[gid];
+    if (sess) {
+      if (state.mode === 'live' && state.group && state.group.id === gid) { go('times', false); return; }
+      state.session = sess;
+      try {
+        const data = await api('GET', '/groups/' + encodeURIComponent(gid) + '/state');
+        startLive({ groupId: gid, memberId: sess.memberId, token: sess.token, state: data });
+        go('times');
+        return;
+      } catch (e) {
+        state.session = null;
+        saveSession(gid, null);
+      }
+    }
+    invite = { loading: true };
+    state.step = 'join';
+    render();
+    try {
+      invite = await api('GET', '/groups/' + encodeURIComponent(gid) + '/invite');
+    } catch (e) {
+      invite = { error: e.message };
+    }
+    if (state.step === 'join') render();
+  }
+
+  function joinHTML() {
+    if (!invite || invite.loading) {
+      return '<section class="join-wrap"><div class="join-card"><p class="empty">Opening your invite…</p></div></section>';
+    }
+    if (invite.error) {
+      return '<section class="join-wrap"><div class="join-card">' +
+        '<div class="join-mark" aria-hidden="true">🔗</div><h1>Invite not found</h1>' +
+        '<p class="join-sub">' + esc(invite.error) + '</p>' +
+        '<a class="btn" href="#/">Go to Bloom</a></div></section>';
+    }
+    return '<section class="join-wrap"><form class="join-card" id="joinForm" novalidate>' +
+      '<img class="join-mark" src="icon.svg" width="64" height="64" alt="">' +
+      '<p class="eyebrow">You’re invited</p>' +
+      '<h1><span class="host">' + esc(invite.host) + '</span> is inviting you to <span class="grp">' + esc(invite.title) + '</span></h1>' +
+      '<p class="join-sub">' + invite.memberCount + (invite.memberCount === 1 ? ' person has' : ' people have') + ' joined so far. Enter the group password to see who’s in and start planning together.</p>' +
+      '<div class="field"><label for="joinName">Your name</label>' +
+        '<input id="joinName" maxlength="20" autocomplete="given-name" required value="' + (state.me.name === 'You' ? '' : esc(state.me.name)) + '"></div>' +
+      '<div class="field"><label for="joinPw">Group password</label>' +
+        '<input id="joinPw" type="password" maxlength="64" autocomplete="current-password" required aria-describedby="joinPwHint">' +
+        '<span class="hint" id="joinPwHint">Ask ' + esc(invite.host) + ' if you don’t have it.</span></div>' +
+      '<p class="form-error" id="joinError" role="alert"></p>' +
+      '<button class="btn" type="submit" id="joinBtn">Join the group →</button>' +
+    '</form></section>';
+  }
+
+  function bindJoin() {
+    const form = $('#joinForm');
+    if (!form) return;
+    (state.me.name === 'You' ? $('#joinName') : $('#joinPw')).focus();
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = $('#joinName').value.trim();
+      const pw = $('#joinPw').value;
+      const err = $('#joinError');
+      if (!name) { err.textContent = 'Add your name so the group knows who you are.'; $('#joinName').focus(); return; }
+      if (!pw) { err.textContent = 'Enter the group password.'; $('#joinPw').focus(); return; }
+      const btn = $('#joinBtn');
+      btn.disabled = true; btn.textContent = 'Checking…';
+      try {
+        const res = await api('POST', '/groups/' + encodeURIComponent(state.joinId) + '/join', { name: name, password: pw });
+        store.set('bloom.name', name);
+        startLive(res);
+        go('times');
+        toast(null, 'You’re in! Paint when you’re free.');
+      } catch (ex) {
+        err.textContent = ex.status === 403 && /password/.test(ex.message) ? 'That password doesn’t match. Ask ' + invite.host + ' to double-check it.' : ex.message;
+        btn.disabled = false; btn.textContent = 'Join the group →';
+        $('#joinPw').select();
+      }
+    });
+  }
+
   // ---------- Weather (Open-Meteo, free, no API key) ----------
   const WEATHER = { lat: 1.2897, lon: 103.8501, place: 'Singapore', hourly: null, status: 'idle' };
-  const pad2 = (n) => String(n).padStart(2, '0');
   async function loadWeather() {
     WEATHER.status = 'loading';
     try {
@@ -1036,12 +1313,7 @@
   // ---------- Boot ----------
   const savedName = store.get('bloom.name');
   if (savedName) state.me.name = savedName;
-  try {
-    const saved = JSON.parse(store.get('bloom.avail') || '[]');
-    if (Array.isArray(saved)) saved.forEach((k) => state.me.avail.add(k));
-  } catch (e) { /* ignore */ }
 
   loadWeather();
-  const initial = location.hash.replace('#/', '') || 'home';
-  go(['home', 'times', 'places', 'bloom'].indexOf(initial) > -1 ? initial : 'home', false);
+  resumeLive().then(() => route(false));
 })();

@@ -4,6 +4,6 @@
   "private": true,
   "description": "Bloom — paint when you're free, swipe on where to go, watch your group's plan bloom.",
   "scripts": {
-    "start": "python3 -m http.server 5178"
+    "start": "python3 server.py"
   }
 }

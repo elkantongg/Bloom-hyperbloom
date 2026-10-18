@@ -247,6 +247,23 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 96px; }
 .wx.warn { background: color-mix(in srgb, var(--gold) 28%, var(--surface)); }
 .link-btn { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; text-decoration: underline; cursor: pointer; font-size: inherit; }
 
+/* ---------- Join / forms ---------- */
+.form-error { color: var(--bad); font-weight: 600; font-size: 14px; min-height: 0; }
+.form-error:empty { display: none; }
+.start-card .btn.ghost { font-size: 14px; min-height: 42px; }
+.invite-note { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.invite code { word-break: break-all; }
+.join-wrap { display: grid; place-items: center; min-height: calc(100vh - 200px); }
+.join-card {
+  width: min(460px, 100%); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 28px; padding: 32px; box-shadow: var(--shadow); display: grid; gap: 16px; text-align: left;
+}
+.join-card .join-mark { width: 64px; height: 64px; font-size: 48px; border-radius: 16px; }
+.join-card .eyebrow { margin: 0; }
+.join-card h1 { font-size: clamp(26px, 4vw, 34px); font-weight: 800; }
+.join-card h1 .host, .join-card h1 .grp { color: var(--accent); }
+.join-sub { color: var(--muted); }
+
 /* ---------- Layout with sidebar ---------- */
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 32px; align-items: start; }
 .page-head { margin-bottom: 22px; }
