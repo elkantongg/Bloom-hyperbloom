@@ -481,6 +481,7 @@ kbd {
 .going { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .going .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border-radius: 999px; background: var(--surface-2); font-size: 13px; font-weight: 600; }
 .going .pill.out { opacity: .6; text-decoration: line-through; }
+.going .pill.pending { opacity: .75; font-style: italic; }
 .plan-actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 18px 24px 24px; }
 .tweak { margin-top: 18px; }
 .tweak summary { cursor: pointer; font-weight: 700; padding: 6px 0; }

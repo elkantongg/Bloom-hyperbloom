@@ -212,22 +212,27 @@ class Handler(BaseHTTPRequestHandler):
     def api(self, method, path):
         try:
             parts = [p for p in path.split("/") if p][1:]  # drop "api"
-            with DB_LOCK:
-                if method == "POST" and parts == ["groups"]:
-                    return self.create_group()
-                if len(parts) >= 2 and parts[0] == "groups":
-                    gid = parts[1]
-                    if not DB.execute("SELECT 1 FROM groups WHERE id=?", (gid,)).fetchone():
-                        raise ApiError(404, "This invite link doesn't exist or has been deleted")
-                    rest = parts[2:]
-                    if method == "GET" and rest == ["invite"]:
-                        return self.invite(gid)
-                    if method == "POST" and rest == ["join"]:
-                        return self.join(gid)
-                    if method == "GET" and rest == ["state"]:
-                        return self.send_json(200, group_state(gid, self.auth(gid)))
-                    if method == "PUT" and rest == ["me"]:
-                        return self.update_me(gid)
+            # The DB lock is only held around database work. Password hashing is
+            # deliberately slow, so it runs outside the lock and never blocks others.
+            if method == "POST" and parts == ["groups"]:
+                return self.create_group()
+            if len(parts) >= 2 and parts[0] == "groups":
+                gid = parts[1]
+                with DB_LOCK:
+                    exists = DB.execute("SELECT 1 FROM groups WHERE id=?", (gid,)).fetchone()
+                if not exists:
+                    raise ApiError(404, "This invite link doesn't exist or has been deleted")
+                rest = parts[2:]
+                if method == "GET" and rest == ["invite"]:
+                    return self.invite(gid)
+                if method == "POST" and rest == ["join"]:
+                    return self.join(gid)
+                if method == "GET" and rest == ["state"]:
+                    with DB_LOCK:
+                        payload = group_state(gid, self.auth(gid))
+                    return self.send_json(200, payload)
+                if method == "PUT" and rest == ["me"]:
+                    return self.update_me(gid)
             raise ApiError(404, "Not found")
         except ApiError as e:
             self.send_json(e.status, {"error": e.message})
@@ -247,17 +252,21 @@ class Handler(BaseHTTPRequestHandler):
             start = date.today().isoformat()
         gid = secrets.token_urlsafe(6)
         salt = secrets.token_bytes(16)
-        DB.execute(
-            "INSERT INTO groups (id, title, host_name, start_date, pw_salt, pw_hash, created_at) VALUES (?,?,?,?,?,?,?)",
-            (gid, title, name, start, salt, hash_password(password, salt), now()),
-        )
-        member_id, token = new_member(gid, name, COLORS[0], True)
-        DB.commit()
-        self.send_json(201, {"groupId": gid, "memberId": member_id, "token": token, "state": group_state(gid, member_id)})
+        pw_hash = hash_password(password, salt)  # slow on purpose; outside the lock
+        with DB_LOCK:
+            DB.execute(
+                "INSERT INTO groups (id, title, host_name, start_date, pw_salt, pw_hash, created_at) VALUES (?,?,?,?,?,?,?)",
+                (gid, title, name, start, salt, pw_hash, now()),
+            )
+            member_id, token = new_member(gid, name, COLORS[0], True)
+            DB.commit()
+            payload = group_state(gid, member_id)
+        self.send_json(201, {"groupId": gid, "memberId": member_id, "token": token, "state": payload})
 
     def invite(self, gid):
-        g = DB.execute("SELECT title, host_name FROM groups WHERE id=?", (gid,)).fetchone()
-        count = DB.execute("SELECT COUNT(*) FROM members WHERE group_id=?", (gid,)).fetchone()[0]
+        with DB_LOCK:
+            g = DB.execute("SELECT title, host_name FROM groups WHERE id=?", (gid,)).fetchone()
+            count = DB.execute("SELECT COUNT(*) FROM members WHERE group_id=?", (gid,)).fetchone()[0]
         self.send_json(200, {"title": g["title"], "host": g["host_name"], "memberCount": count})
 
     def join(self, gid):
@@ -270,36 +279,52 @@ class Handler(BaseHTTPRequestHandler):
         body = self.read_body()
         name = text(body, "name", 1, 20)
         password = body.get("password") if isinstance(body.get("password"), str) else ""
-        g = DB.execute("SELECT pw_salt, pw_hash FROM groups WHERE id=?", (gid,)).fetchone()
+        with DB_LOCK:
+            g = DB.execute("SELECT pw_salt, pw_hash FROM groups WHERE id=?", (gid,)).fetchone()
+        # Slow on purpose (makes guessing passwords impractical); outside the lock.
         if not hmac.compare_digest(hash_password(password, g["pw_salt"]), g["pw_hash"]):
             with FAILS_LOCK:
+                if len(FAILS) > 5000:  # forget stale entries so memory can't grow forever
+                    stale = [k for k, (_, u) in FAILS.items() if u < time.time()]
+                    for k in stale:
+                        FAILS.pop(k, None)
                 count += 1
                 FAILS[key] = (0, time.time() + 60) if count >= 5 else (count, 0)
             raise ApiError(403, "That password doesn't match")
         with FAILS_LOCK:
             FAILS.pop(key, None)
-        members = DB.execute("SELECT COUNT(*) FROM members WHERE group_id=?", (gid,)).fetchone()[0]
-        if members >= MAX_MEMBERS:
-            raise ApiError(403, f"This group is full ({MAX_MEMBERS} people max)")
-        member_id, token = new_member(gid, name, COLORS[members % len(COLORS)], False)
-        DB.commit()
-        self.send_json(201, {"groupId": gid, "memberId": member_id, "token": token, "state": group_state(gid, member_id)})
+        with DB_LOCK:
+            names = [r[0].casefold() for r in DB.execute("SELECT name FROM members WHERE group_id=?", (gid,)).fetchall()]
+            if name.casefold() in names:
+                raise ApiError(409, f"Someone called {name} is already in this group. Add an initial, like “{name} T”.")
+            if len(names) >= MAX_MEMBERS:
+                raise ApiError(403, f"This group is full ({MAX_MEMBERS} people max)")
+            member_id, token = new_member(gid, name, COLORS[len(names) % len(COLORS)], False)
+            DB.commit()
+            payload = group_state(gid, member_id)
+        self.send_json(201, {"groupId": gid, "memberId": member_id, "token": token, "state": payload})
 
     def update_me(self, gid):
-        member_id = self.auth(gid)
         body = self.read_body()
+        avail = votes = None
         if "avail" in body:
             avail = body["avail"]
             if not isinstance(avail, list) or len(avail) > 200 or not all(isinstance(s, str) and SLOT_RE.match(s) for s in avail):
                 raise ApiError(400, "Invalid availability")
-            DB.execute("UPDATE members SET avail=?, updated_at=? WHERE id=?", (json.dumps(sorted(set(avail))), now(), member_id))
         if "votes" in body:
             votes = body["votes"]
-            if not isinstance(votes, dict) or not all(k in PLACE_IDS and v in (-1, 0, 1) for k, v in votes.items()):
+            # type() check rejects true/false, which Python would otherwise treat as 1/0.
+            if not isinstance(votes, dict) or not all(k in PLACE_IDS and type(v) is int and v in (-1, 0, 1) for k, v in votes.items()):
                 raise ApiError(400, "Invalid votes")
-            DB.execute("UPDATE members SET votes=?, updated_at=? WHERE id=?", (json.dumps(votes), now(), member_id))
-        DB.commit()
-        self.send_json(200, group_state(gid, member_id))
+        with DB_LOCK:
+            member_id = self.auth(gid)
+            if avail is not None:
+                DB.execute("UPDATE members SET avail=?, updated_at=? WHERE id=?", (json.dumps(sorted(set(avail))), now(), member_id))
+            if votes is not None:
+                DB.execute("UPDATE members SET votes=?, updated_at=? WHERE id=?", (json.dumps(votes), now(), member_id))
+            DB.commit()
+            payload = group_state(gid, member_id)
+        self.send_json(200, payload)
 
 
 def main():

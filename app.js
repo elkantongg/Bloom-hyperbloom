@@ -214,7 +214,7 @@
         '<path class="leaf" d="M0,140 C-30,124 -56,132 -66,118 C-50,152 -22,152 0,146 Z"/>'
       : '';
     const vb = opts.stem ? '-110 -110 220 290' : '-100 -100 200 200';
-    return '<svg class="flower" viewBox="' + vb + '" role="img" aria-label="' + esc(flowerLabel()) + '">' +
+    return '<svg class="flower" data-stem="' + (opts.stem ? 1 : 0) + '" viewBox="' + vb + '" role="img" aria-label="' + esc(flowerLabel()) + '">' +
       stem + petals +
       '<circle class="core" r="18" fill="var(--gold)"/>' +
       '<circle r="6" fill="#fff" opacity=".55" cx="-5" cy="-5"/>' +
@@ -225,6 +225,13 @@
   }
   function updateFlowers() {
     const score = bloomScore();
+    $$('.flower').forEach((svg) => {
+      if (svg.querySelectorAll('.petal').length !== people().length) {
+        const fresh = document.createElement('div');
+        fresh.innerHTML = flowerSVG({ stem: svg.dataset.stem === '1' });
+        svg.replaceWith(fresh.firstChild);
+      }
+    });
     $$('.flower').forEach((svg) => {
       people().forEach((p) => {
         const petal = svg.querySelector('.petal[data-pid="' + p.id + '"]');
@@ -286,6 +293,7 @@
       updateStepper();
       if (state.step === 'times') { updateAllCells(); renderBest(); }
       if (state.step === 'places') { renderRanking(); updateCardFriends(); }
+      if (state.step === 'bloom') { renderPlanCard(); renderWaiting(); }
       checkMilestones();
     });
   }
@@ -967,7 +975,7 @@
         '<h1 class="bloom-title">' + (score >= 80 ? 'It’s a plan! 🌸' : score >= 50 ? 'Almost in bloom 🌷' : 'Still budding 🌱') + '</h1>' +
         '<p class="bloom-sub"><strong data-bloom-score>' + score + '%</strong> in bloom · ' +
           (score >= 80 ? 'Everyone’s on board.' : 'A few people are still deciding — you can lock it in anyway.') + '</p>' +
-        waitingHTML() +
+        '<div id="waitingBox">' + waitingHTML() + '</div>' +
       '</div>' +
       '<div><article class="plan-card" id="planCard" aria-labelledby="planTitle"></article>' +
         '<details class="tweak"><summary>Change the time or place</summary>' +
@@ -984,6 +992,12 @@
     '</section>';
   }
 
+  function renderWaiting() {
+    const box = $('#waitingBox');
+    if (!box) return;
+    const html = waitingHTML();
+    if (box.innerHTML !== html) box.innerHTML = html;
+  }
   function waitingHTML() {
     const waiting = state.friends.filter((f) => !f.avail.size || Object.keys(f.votes).length < PLACES.length);
     if (!waiting.length) return '';
@@ -1011,8 +1025,16 @@
     const run = computeRuns().find((r) => r.id === state.pickRun) || chosenRun();
     const pl = chosenPlace();
     const card = $('#planCard');
-    if (!card || !run) return;
+    if (!card) return;
+    if (!run) {
+      card.innerHTML = '<div class="plan-rows"><p class="empty" style="padding:20px 0">Paint at least one free hour so Bloom can find a time. <a class="link-btn" href="#/times">Add your times</a></p></div>';
+      return;
+    }
+    const sig = [run.id, pl.id, run.who.map((p) => p.id).join(','), people().map((p) => p.id + ':' + p.avail.size).join(','), WEATHER.status, WEATHER.place].join('|');
+    if (card.dataset.sig === sig) return;
+    card.dataset.sig = sig;
     const out = people().filter((p) => run.who.indexOf(p) === -1);
+    const cant = out.filter((p) => p.avail.size), pending = out.filter((p) => !p.avail.size);
     card.innerHTML =
       '<header><div class="tiny">You’re all set</div><h2 id="planTitle">' + esc(state.title) + '</h2></header>' +
       '<div class="plan-rows">' +
@@ -1024,7 +1046,8 @@
         '<div class="plan-row"><span class="ico" aria-hidden="true">👯</span><div><div class="k">Who’s coming · ' + run.who.length + ' of ' + total() + '</div>' +
           '<div class="going">' +
             run.who.map((p) => '<span class="pill">' + avatar(p, 'sm') + esc(displayName(p)) + '</span>').join('') +
-            out.map((p) => '<span class="pill out">' + avatar(p, 'sm') + esc(p.name) + '<span class="sr-only"> can’t make this time</span></span>').join('') +
+            cant.map((p) => '<span class="pill out">' + avatar(p, 'sm') + esc(p.name) + '<span class="sr-only"> can’t make this time</span></span>').join('') +
+            pending.map((p) => '<span class="pill pending">' + avatar(p, 'sm') + esc(p.name) + ' · hasn’t replied</span>').join('') +
           '</div></div></div>' +
       '</div>' +
       '<div class="plan-actions">' +
@@ -1042,8 +1065,8 @@
 
   function bindBloom() {
     renderPlanCard();
-    const nudge = $('#nudgeBtn');
-    if (nudge) nudge.addEventListener('click', () => {
+    $('#waitingBox').addEventListener('click', (e) => {
+      if (!e.target.closest('#nudgeBtn')) return;
       const waiting = state.friends.filter((f) => !f.avail.size || Object.keys(f.votes).length < PLACES.length);
       copy('Hey ' + waiting.map((f) => f.name).join(' & ') + '! 🌸 We’re almost done planning “' + state.title + '” — tap to add your times and votes (takes 1 min): ' + inviteLink(),
         'Nudge copied — paste it in the group chat');
@@ -1071,6 +1094,8 @@
     state.friends.forEach((f) => { f.avail.clear(); f.votes = {}; f.joined = false; });
     state.sim = { times: false, votes: false };
     state.deckIndex = 0;
+    state.milestones = {};
+    state.coachDone = { grid: false, deck: false };
     state.pickRun = state.pickPlace = null;
     go('home');
   }
@@ -1162,12 +1187,13 @@
     const pad = (n) => String(n).padStart(2, '0');
     const stamp = (h) => d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(h) + '0000';
     const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const icsText = (t) => String(t).replace(/\\/g, '\\\\').replace(/[;,]/g, '\\$&').replace(/\r?\n/g, '\\n');
     const ics = [
       'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Bloom//Group Plans//EN', 'BEGIN:VEVENT',
       'UID:' + Date.now() + '@bloom.plan', 'DTSTAMP:' + now,
       'DTSTART:' + stamp(run.start), 'DTEND:' + stamp(run.end),
-      'SUMMARY:' + state.title, 'LOCATION:' + pl.name,
-      'DESCRIPTION:With ' + run.who.map((p) => p.name).join(', ') + '. Planned with Bloom.',
+      'SUMMARY:' + icsText(state.title), 'LOCATION:' + icsText(pl.name),
+      'DESCRIPTION:' + icsText('With ' + run.who.map((p) => p.name).join(', ') + '. Planned with Bloom.'),
       'END:VEVENT', 'END:VCALENDAR',
     ].join('\r\n');
     const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
@@ -1288,7 +1314,8 @@
     if (mine) {
       const me = toPerson(mine);
       // Don't let an older server copy overwrite edits that are still being saved.
-      if (pendingSave || !first && state.me.id === me.id) { me.avail = state.me.avail; me.votes = state.me.votes; }
+      // This device is the source of truth for your own answers once loaded.
+      if (!first && state.me.id === me.id) { me.avail = state.me.avail; me.votes = state.me.votes; }
       if (first) { me.avail = new Set(mine.avail); me.votes = mine.votes; }
       state.me = me;
     }
@@ -1309,15 +1336,21 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flushSave, 400);
   }
+  let saving = false;
   async function flushSave() {
     if (!pendingSave || !state.group) return;
+    if (saving) { saveTimer = setTimeout(flushSave, 300); return; }
     const patch = pendingSave;
+    pendingSave = null; // edits made while this request is in flight start a fresh patch
+    saving = true;
     try {
       await api('PUT', '/groups/' + encodeURIComponent(state.group.id) + '/me', patch);
-      if (pendingSave === patch) pendingSave = null;
     } catch (e) {
+      pendingSave = Object.assign({}, patch, pendingSave || {}); // newer edits win
       toast(null, 'Couldn’t save — retrying…');
       saveTimer = setTimeout(flushSave, 3000);
+    } finally {
+      saving = false;
     }
   }
 
@@ -1372,7 +1405,8 @@
         return;
       } catch (e) {
         state.session = null;
-        saveSession(gid, null);
+        if (e.status === 401 || e.status === 404) saveSession(gid, null);
+        else if (e.status === 0) { invite = { error: e.message }; state.step = 'join'; render(); return; }
       }
     }
     invite = { loading: true };
