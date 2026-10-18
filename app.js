@@ -435,8 +435,10 @@
     if (!ids.length) return '';
     return '<section class="my-groups" aria-labelledby="myGroupsTitle"><h2 id="myGroupsTitle">Your groups</h2><ul>' +
       ids.map((id) => '<li><span class="mg-title">' + esc(all[id].title || 'Group ' + id) + '</span>' +
-        '<a class="btn small" href="#/join/' + encodeURIComponent(id) + '">Continue →</a></li>').join('') +
-      '</ul><p class="hint">Saved on this device. Demo mode never changes these.</p></section>';
+        '<span class="mg-actions"><a class="btn small" href="#/join/' + encodeURIComponent(id) + '">Continue →</a>' +
+        '<button type="button" class="icon-btn sm" data-forget="' + esc(id) + '" aria-label="Remove ' + esc(all[id].title || 'group') + ' from this device">✕</button></span></li>').join('') +
+      '</ul><p class="hint">Saved on this device. Removing a group here doesn’t delete it for your friends. ' +
+      '<button type="button" class="link-btn" id="startFresh">Start fresh</button></p></section>';
   }
   function heroMark() {
     // Three schedules drifting together; the spark is where everyone overlaps.
@@ -457,6 +459,24 @@
       });
       io.observe(art);
     }
+    $$('[data-forget]').forEach((b) => b.addEventListener('click', () => {
+      saveSession(b.dataset.forget, null);
+      render();
+      announce('Group removed from this device.');
+      const next = $('[data-forget]') || $('#planTitle');
+      if (next) next.focus();
+    }));
+    const fresh = $('#startFresh');
+    if (fresh) fresh.addEventListener('click', () => {
+      store.set('bloom.sessions', '{}');
+      store.set('bloom.current', '');
+      store.set('bloom.name', '');
+      state.title = 'Weekend hangout';
+      state.me.name = 'You';
+      render();
+      announce('Started fresh. Saved groups and your name were cleared from this device.');
+      $('#planTitle').focus();
+    });
     $('#startForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const t = $('#planTitle').value.trim() || 'Weekend hangout';
