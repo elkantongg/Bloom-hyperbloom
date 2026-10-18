@@ -74,7 +74,20 @@
   }
 
   // Consecutive same-day hours where exactly the same people are free.
-  function computeRuns() {
+  // Cache derived data for the current task only, so one screen update
+  // doesn't recompute the same thing several times.
+  const memo = {};
+  function cached(name, fn) {
+    if (!(name in memo)) {
+      memo[name] = fn();
+      queueMicrotask(() => { delete memo[name]; });
+    }
+    return memo[name];
+  }
+  function computeRuns() { return cached('runs', computeRunsFresh); }
+  function rankPlaces() { return cached('places', rankPlacesFresh); }
+
+  function computeRunsFresh() {
     const runs = [];
     DAYS.forEach((_, di) => {
       let cur = null;
@@ -99,7 +112,7 @@
     return runs;
   }
 
-  function rankPlaces() {
+  function rankPlacesFresh() {
     return PLACES.map((pl) => {
       const r = Object.assign({}, pl, { points: 0, voters: 0, yes: [], maybe: [], no: [] });
       people().forEach((p) => {
@@ -366,6 +379,13 @@
       '</svg>';
   }
   function bindHome() {
+    const art = $('.hero-art');
+    if (art && 'IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((en) => art.classList.toggle('paused', !en.isIntersecting));
+      });
+      io.observe(art);
+    }
     $('#startForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const t = $('#planTitle').value.trim();

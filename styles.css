@@ -93,9 +93,7 @@ main:focus, h1[tabindex="-1"]:focus { outline: none; }
   position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; gap: 16px;
   padding: 12px 24px;
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
 .brand {
@@ -237,6 +235,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 96px; }
 .hero-mark .r3 { animation: drift3 7s ease-in-out infinite; }
 .hero-mark .spark { transform-box: fill-box; transform-origin: center; animation: spark 7s ease-in-out infinite; }
 .hero-mark .glow { animation: glow 7s ease-in-out infinite; }
+/* Save CPU/GPU: stop looping animations when they're off-screen. */
+.hero-art.paused .floating, .hero-art.paused .hero-mark * { animation-play-state: paused; }
 @keyframes drift1 { 0%, 100% { transform: translate(0, -26px); } 45%, 60% { transform: translate(0, 0); } }
 @keyframes drift2 { 0%, 100% { transform: translate(-24px, 16px); } 45%, 60% { transform: translate(0, 0); } }
 @keyframes drift3 { 0%, 100% { transform: translate(24px, 16px); } 45%, 60% { transform: translate(0, 0); } }
