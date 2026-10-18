@@ -1,0 +1,1027 @@
+/* Bloom — group plans that actually happen.
+   Frontend-only prototype: friends are simulated so the live, multi-person
+   experience can be demoed by a single person. */
+(function () {
+  'use strict';
+
+  // ---------- Helpers ----------
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } },
+  };
+
+  // ---------- Calendar setup ----------
+  const HOURS = Array.from({ length: 12 }, (_, i) => 10 + i); // 10am .. 9pm slots
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const DAYS = Array.from({ length: 7 }, (_, i) => { const d = new Date(today); d.setDate(d.getDate() + i); return d; });
+  const key = (di, h) => di + '-' + h;
+  const fmtHour = (h) => (h % 12 || 12) + (h < 12 || h === 24 ? 'am' : 'pm');
+  const fmtRange = (a, b) => {
+    const sameHalf = (a < 12) === (b < 12 || b === 24);
+    return (sameHalf ? String(a % 12 || 12) : fmtHour(a)) + '–' + fmtHour(b);
+  };
+  const dayShort = (di) => (di === 0 ? 'Today' : DAYS[di].toLocaleDateString(undefined, { weekday: 'short' }));
+  const dayLong = (di) => (di === 0 ? 'Today' : di === 1 ? 'Tomorrow' : DAYS[di].toLocaleDateString(undefined, { weekday: 'long' }));
+  const dateLong = (di) => DAYS[di].toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+
+  // ---------- Demo data ----------
+  // Free-time patterns by weekday (0 = Sun). Everyone overlaps on Saturday afternoon.
+  const FRIENDS = [
+    { id: 'maya', name: 'Maya', color: '#E4477A', pattern: { 1: [[18, 22]], 2: [[18, 22]], 3: [[18, 22]], 4: [[18, 22]], 5: [[18, 22]], 6: [[12, 20]], 0: [[10, 14]] } },
+    { id: 'jun', name: 'Jun', color: '#D9831A', pattern: { 5: [[19, 22]], 6: [[14, 22]], 0: [[14, 18]] } },
+    { id: 'priya', name: 'Priya', color: '#7C5CFF', pattern: { 1: [[19, 21]], 2: [[19, 21]], 4: [[19, 21]], 5: [[19, 22]], 6: [[10, 18]], 0: [[10, 22]] } },
+    { id: 'sam', name: 'Sam', color: '#11966A', pattern: { 2: [[17, 22]], 4: [[17, 22]], 6: [[15, 19]], 0: [[11, 13]] } },
+  ];
+
+  const PLACES = [
+    { id: 'noodle', name: 'Lantern Noodle Bar', kind: 'Dinner', emoji: '🍜', price: '$$', dist: '1.2 km', blurb: 'Hand-pulled noodles and big shared tables.', tags: ['Step-free', 'Veg options'], hue: '#FFC48A' },
+    { id: 'bowling', name: 'Strike Social', kind: 'Bowling', emoji: '🎳', price: '$$', dist: '3.4 km', blurb: 'Retro lanes, arcade machines and milkshakes.', tags: ['Step-free', 'Groups of 6+'], hue: '#A9C4FF' },
+    { id: 'picnic', name: 'Botanic Gardens Picnic', kind: 'Outdoors', emoji: '🧺', price: 'Free', dist: '2.0 km', blurb: 'Bring snacks, find a shady lawn, stay till sunset.', tags: ['Free', 'Weather-dependent'], hue: '#A8E6B4', outdoor: true },
+    { id: 'escape', name: 'Clockwork Escape Room', kind: 'Activity', emoji: '🔐', price: '$$$', dist: '4.1 km', blurb: '60 minutes to escape a locked inventor’s study.', tags: ['Max 6 people', 'Book ahead'], hue: '#D2B8FF' },
+    { id: 'karaoke', name: 'Echo Box Karaoke', kind: 'Karaoke', emoji: '🎤', price: '$$', dist: '2.7 km', blurb: 'Private rooms, 5,000+ songs, zero judgement.', tags: ['Private room', 'Open late'], hue: '#FFB0D2' },
+    { id: 'cafe', name: 'Paper Crane Board Game Café', kind: 'Café', emoji: '🎲', price: '$', dist: '0.8 km', blurb: '300 board games, waffles and quiet corners.', tags: ['Quiet', 'Step-free'], hue: '#FFE08A' },
+  ];
+
+  const FRIEND_VOTES = {
+    maya: { noodle: 1, bowling: 0, picnic: 1, escape: -1, karaoke: 1, cafe: 1 },
+    jun: { noodle: 1, bowling: 1, picnic: -1, escape: 1, karaoke: 1, cafe: 0 },
+    priya: { noodle: 0, bowling: -1, picnic: 1, escape: 1, karaoke: 0, cafe: 1 },
+    sam: { noodle: 1, bowling: 1, picnic: 0, escape: -1, karaoke: 1, cafe: 1 },
+  };
+
+  // ---------- State ----------
+  const state = {
+    step: 'home',
+    title: 'Weekend hangout',
+    me: { id: 'me', name: 'You', color: '#2F6FEB', avail: new Set(), votes: {}, joined: true },
+    friends: FRIENDS.map((f) => Object.assign({}, f, { avail: new Set(), votes: {}, joined: false })),
+    sim: { times: false, votes: false },
+    deckIndex: 0,
+    pickRun: null,
+    pickPlace: null,
+  };
+  const people = () => [state.me].concat(state.friends);
+  const total = () => people().length;
+
+  // ---------- Derived data ----------
+  function freeAt(di, h) {
+    const k = key(di, h);
+    return people().filter((p) => p.joined && p.avail.has(k));
+  }
+
+  // Consecutive same-day hours where exactly the same people are free.
+  function computeRuns() {
+    const runs = [];
+    DAYS.forEach((_, di) => {
+      let cur = null;
+      HOURS.forEach((h) => {
+        const who = freeAt(di, h);
+        const sig = who.map((p) => p.id).join(',');
+        if (who.length && cur && cur.sig === sig && cur.end === h) {
+          cur.end = h + 1;
+        } else {
+          if (cur) runs.push(cur);
+          cur = who.length ? { d: di, start: h, end: h + 1, who: who, sig: sig } : null;
+        }
+      });
+      if (cur) runs.push(cur);
+    });
+    runs.sort((a, b) =>
+      b.who.length - a.who.length ||
+      (b.who.includes(state.me) - a.who.includes(state.me)) ||
+      (b.end - b.start) - (a.end - a.start) ||
+      a.d - b.d || a.start - b.start);
+    runs.forEach((r) => { r.id = r.d + '-' + r.start + '-' + r.end; });
+    return runs;
+  }
+
+  function rankPlaces() {
+    return PLACES.map((pl) => {
+      const r = Object.assign({}, pl, { points: 0, voters: 0, yes: [], maybe: [], no: [] });
+      people().forEach((p) => {
+        const v = p.votes[pl.id];
+        if (v === undefined) return;
+        r.voters++;
+        if (v === 1) { r.points += 2; r.yes.push(p); }
+        else if (v === 0) { r.points += 1; r.maybe.push(p); }
+        else r.no.push(p);
+      });
+      return r;
+    }).sort((a, b) => b.points - a.points || a.no.length - b.no.length);
+  }
+
+  function personProgress(p) {
+    if (!p.joined) return 0;
+    const voted = Object.keys(p.votes).length / PLACES.length;
+    return 0.2 + (p.avail.size ? 0.4 : 0) + 0.4 * voted;
+  }
+
+  function bloomScore() {
+    const runs = computeRuns();
+    const t = runs[0] ? runs[0].who.length / total() : 0;
+    const top = rankPlaces()[0];
+    const pl = top && top.voters ? top.points / (2 * total()) : 0;
+    return Math.round((t * 0.5 + pl * 0.5) * 100);
+  }
+
+  function chosenRun() {
+    const runs = computeRuns();
+    return runs.find((r) => r.id === state.pickRun) || runs[0] || null;
+  }
+  function chosenPlace() {
+    const ranked = rankPlaces();
+    return ranked.find((p) => p.id === state.pickPlace) || ranked[0];
+  }
+
+  // ---------- Feedback ----------
+  function announce(msg) {
+    const live = $('#live');
+    live.textContent = '';
+    setTimeout(() => { live.textContent = msg; }, 60);
+  }
+  function toast(person, msg) {
+    const wrap = $('#toasts');
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.innerHTML = (person ? avatar(person, 'sm') : '') + '<span>' + esc(msg) + '</span>';
+    wrap.appendChild(el);
+    while (wrap.children.length > 3) wrap.firstChild.remove();
+    setTimeout(() => el.remove(), 3300);
+  }
+  function avatar(p, size) {
+    const waiting = !p.joined ? ' waiting' : '';
+    return '<span class="av ' + (size || '') + waiting + '" style="--c:' + p.color + '" title="' + esc(p.name) + '" aria-hidden="true">' + esc(p.name.trim().charAt(0).toUpperCase() || '?') + '</span>';
+  }
+  function avatarStack(list, size) {
+    return '<span class="av-stack">' + list.map((p) => avatar(p, size || 'sm')).join('') + '</span>';
+  }
+  function displayName(p) { return p === state.me && p.name !== 'You' ? p.name + ' (you)' : p.name; }
+  function namesList(list) {
+    const n = list.map((p) => (p === state.me ? 'you' : p.name));
+    if (n.length <= 1) return n.join('');
+    return n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1];
+  }
+
+  // ---------- Flower ----------
+  const PETAL = 'M0,0 C-26,-22 -24,-70 0,-86 C24,-70 26,-22 0,0 Z';
+  function flowerSVG(opts) {
+    opts = opts || {};
+    const ps = people();
+    let petals = '';
+    ps.forEach((p, i) => {
+      const a = (360 / ps.length) * i;
+      petals += '<g transform="rotate(' + a + ')"><path class="petal" data-pid="' + p.id + '" d="' + PETAL + '" fill="' + p.color + '"/></g>';
+    });
+    const stem = opts.stem
+      ? '<path class="stem" d="M0,20 C6,80 -6,120 0,170" fill="none" stroke-width="7" stroke-linecap="round"/>' +
+        '<path class="leaf" d="M0,120 C30,100 58,108 70,92 C52,128 22,132 0,126 Z"/>' +
+        '<path class="leaf" d="M0,140 C-30,124 -56,132 -66,118 C-50,152 -22,152 0,146 Z"/>'
+      : '';
+    const vb = opts.stem ? '-110 -110 220 290' : '-100 -100 200 200';
+    return '<svg class="flower" viewBox="' + vb + '" role="img" aria-label="' + esc(flowerLabel()) + '">' +
+      stem + petals +
+      '<circle class="core" r="18" fill="var(--gold)"/>' +
+      '<circle r="6" fill="#fff" opacity=".55" cx="-5" cy="-5"/>' +
+      '</svg>';
+  }
+  function flowerLabel() {
+    return 'Plan flower: ' + bloomScore() + '% in bloom. One petal per person; petals open as people add times and vote.';
+  }
+  function updateFlowers() {
+    const score = bloomScore();
+    $$('.flower').forEach((svg) => {
+      people().forEach((p) => {
+        const petal = svg.querySelector('.petal[data-pid="' + p.id + '"]');
+        if (!petal) return;
+        const prog = personProgress(p);
+        petal.style.setProperty('--s', (0.18 + prog * 0.82).toFixed(3));
+        petal.classList.toggle('bud', !p.joined);
+      });
+      const core = svg.querySelector('.core');
+      if (core) core.setAttribute('r', String(14 + score * 0.12));
+      svg.setAttribute('aria-label', flowerLabel());
+    });
+    $$('[data-bloom-score]').forEach((el) => { el.textContent = score + '%'; });
+  }
+
+  // ---------- Sidebar ----------
+  function sidebarHTML() {
+    return '<aside class="side" aria-label="Your group">' +
+      '<div class="panel group">' +
+        '<div class="flower-wrap">' + flowerSVG() + '</div>' +
+        '<div>' +
+          '<div class="bloom-meter"><strong data-bloom-score>0%</strong><span>in bloom</span></div>' +
+          '<h2 class="sr-only">Who’s in</h2>' +
+          '<ul class="people" id="people"></ul>' +
+        '</div>' +
+      '</div>' +
+      '<p class="demo-note">Demo mode: Maya, Jun, Priya and Sam are simulated friends so you can see Bloom update live.</p>' +
+    '</aside>';
+  }
+  function statusOf(p) {
+    if (!p.joined) return 'Invite sent';
+    const v = Object.keys(p.votes).length;
+    if (v >= PLACES.length) return 'All done ✓';
+    if (v > 0) return 'Voted ' + v + ' of ' + PLACES.length;
+    if (p.avail.size) return 'Added ' + p.avail.size + ' free hours';
+    return p === state.me ? 'Paint your free times' : 'Adding times…';
+  }
+  function updatePeople() {
+    const ul = $('#people');
+    if (!ul) return;
+    ul.innerHTML = people().map((p) =>
+      '<li>' + avatar(p) + '<div><div class="who">' + esc(displayName(p)) + '</div>' +
+      '<div class="status">' + esc(statusOf(p)) + '</div>' +
+      '<div class="progress" aria-hidden="true"><i style="--p:' + Math.round(personProgress(p) * 100) + '%;--c:' + p.color + '"></i></div></div></li>'
+    ).join('');
+  }
+
+  let refreshQueued = false;
+  function refresh() {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    requestAnimationFrame(() => {
+      refreshQueued = false;
+      updateFlowers();
+      updatePeople();
+      updateStepper();
+      if (state.step === 'times') { updateAllCells(); renderBest(); }
+      if (state.step === 'places') { renderRanking(); updateCardFriends(); }
+    });
+  }
+
+  // ---------- Router ----------
+  function canGo(step) {
+    if (step === 'home' || step === 'times') return true;
+    if (step === 'places') return state.me.avail.size > 0;
+    if (step === 'bloom') return state.deckIndex >= PLACES.length;
+    return false;
+  }
+  function go(step, push) {
+    if (!canGo(step)) step = canGo('places') ? 'places' : 'times';
+    state.step = step;
+    if (push !== false) {
+      const h = step === 'home' ? '#/' : '#/' + step;
+      if (location.hash !== h) history.pushState(null, '', h);
+    }
+    render();
+  }
+  window.addEventListener('popstate', () => {
+    const s = location.hash.replace('#/', '') || 'home';
+    go(s, false);
+  });
+
+  function updateStepper() {
+    const order = ['times', 'places', 'bloom'];
+    $('.topbar').classList.toggle('is-home', state.step === 'home');
+    $$('#stepper button').forEach((b) => {
+      const s = b.dataset.step;
+      b.disabled = !canGo(s);
+      if (s === state.step) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+      b.classList.toggle('done', order.indexOf(s) < order.indexOf(state.step));
+    });
+  }
+  $('#stepper').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-step]');
+    if (b && !b.disabled) go(b.dataset.step);
+  });
+
+  function render() {
+    clearTimers('deck');
+    const main = $('#main');
+    if (state.step === 'home') main.innerHTML = homeHTML();
+    if (state.step === 'times') main.innerHTML = timesHTML();
+    if (state.step === 'places') main.innerHTML = placesHTML();
+    if (state.step === 'bloom') main.innerHTML = bloomHTML();
+    document.title = {
+      home: 'Bloom — plans that actually happen',
+      times: 'When are you free? · Bloom',
+      places: 'Where should we go? · Bloom',
+      bloom: 'Your plan · Bloom',
+    }[state.step];
+    if (state.step === 'home') bindHome();
+    if (state.step === 'times') bindTimes();
+    if (state.step === 'places') bindPlaces();
+    if (state.step === 'bloom') bindBloom();
+    updateStepper();
+    updatePeople();
+    updateFlowers();
+    window.scrollTo(0, 0);
+    const h1 = $('#main h1');
+    if (h1 && state.step !== 'home') { h1.setAttribute('tabindex', '-1'); h1.focus({ preventScroll: true }); }
+  }
+
+  // ---------- Timers (so simulations survive, but per-view animations don't) ----------
+  const timers = { sim: [], deck: [] };
+  function later(group, fn, ms) { timers[group].push(setTimeout(fn, ms)); }
+  function clearTimers(group) { timers[group].forEach(clearTimeout); timers[group] = []; }
+
+  // ---------- Home ----------
+  function homeHTML() {
+    return '' +
+      '<section class="hero">' +
+        '<div>' +
+          '<p class="eyebrow">🌸 For friends, families & flatmates</p>' +
+          '<h1>Plans that <em>actually</em> happen.</h1>' +
+          '<p class="lede">Skip the 200-message group chat. Paint when you’re free, swipe on where to go, and watch your plan bloom.</p>' +
+          '<form class="start-card" id="startForm">' +
+            '<div class="field"><label for="planTitle">What’s the plan?</label>' +
+              '<input id="planTitle" name="title" value="' + esc(state.title) + '" maxlength="40" autocomplete="off"></div>' +
+            '<div class="field"><label for="myName">Your name</label>' +
+              '<input id="myName" name="name" placeholder="e.g. Alex" maxlength="20" autocomplete="given-name" value="' + (state.me.name === 'You' ? '' : esc(state.me.name)) + '"></div>' +
+            '<div class="field"><span class="label" id="whoLbl">Who’s invited</span>' +
+              '<div class="friend-chips" aria-labelledby="whoLbl">' +
+                state.friends.map((f) => '<span class="friend-chip"><span class="av" style="--c:' + f.color + '" aria-hidden="true">' + f.name[0] + '</span>' + f.name + '</span>').join('') +
+              '</div>' +
+              '<span class="hint">Demo friends — they’ll “reply” live so you can see how Bloom works.</span></div>' +
+            '<button class="btn" type="submit">Start planning →</button>' +
+          '</form>' +
+        '</div>' +
+        '<div class="hero-art" aria-hidden="true">' +
+          heroMark() +
+          '<div class="floating f1">' + '<span class="av sm" style="--c:#7C5CFF">P</span><div>Priya is free<small>Sat 10am–6pm</small></div></div>' +
+          '<div class="floating f2">🍜<div>3 yes votes<small>Lantern Noodle Bar</small></div></div>' +
+          '<div class="floating f3">✨<div>Everyone’s free!<small>Sat 3–6pm</small></div></div>' +
+        '</div>' +
+      '</section>' +
+      '<ol class="how">' +
+        '<li><span class="ico" aria-hidden="true">🖌️</span><h3>Paint your time</h3><p>Drag across the week. Brighter squares mean more friends are free, so the best time finds itself.</p></li>' +
+        '<li><span class="ico" aria-hidden="true">👆</span><h3>Swipe on places</h3><p>Yes, maybe, or nope. No debates, no “idk, you pick”. Accessibility info is on every card.</p></li>' +
+        '<li><span class="ico" aria-hidden="true">🌸</span><h3>Watch it bloom</h3><p>Each friend is a petal. When everyone’s in, you get one clear plan to add to your calendar.</p></li>' +
+      '</ol>';
+  }
+  function heroMark() {
+    // Three schedules drifting together; the spark is where everyone overlaps.
+    return '<svg class="hero-mark" viewBox="-150 -150 300 300">' +
+      '<defs><radialGradient id="glow"><stop offset="0" stop-color="#FFD25E" stop-opacity=".9"/><stop offset="1" stop-color="#FFD25E" stop-opacity="0"/></radialGradient></defs>' +
+      '<circle class="ring r1" cx="0" cy="-42" r="80" fill="#FF5E8E"/>' +
+      '<circle class="ring r2" cx="-37" cy="24" r="80" fill="#9B5CFF"/>' +
+      '<circle class="ring r3" cx="37" cy="24" r="80" fill="#3B6BFF"/>' +
+      '<circle class="glow" cx="0" cy="2" r="46" fill="url(#glow)"/>' +
+      '<path class="spark" d="M0 -26 L7 -6 L27 2 L7 9 L0 30 L-7 9 L-27 2 L-7 -6 Z" fill="#FFD25E"/>' +
+      '</svg>';
+  }
+  function bindHome() {
+    $('#startForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const t = $('#planTitle').value.trim();
+      const n = $('#myName').value.trim();
+      state.title = t || 'Weekend hangout';
+      state.me.name = n || 'You';
+      store.set('bloom.name', state.me.name === 'You' ? '' : state.me.name);
+      go('times');
+    });
+  }
+
+  // ---------- Step 1: times ----------
+  function timesHTML() {
+    let grid = '<div class="grid" id="grid" role="grid" aria-label="Your availability this week" aria-describedby="gridHelp" style="--cols:' + DAYS.length + '">';
+    grid += '<div class="g-row" role="row"><div role="columnheader"><span class="sr-only">Time</span></div>';
+    DAYS.forEach((d, di) => {
+      const wk = d.getDay() === 0 || d.getDay() === 6 ? ' weekend' : '';
+      grid += '<div class="g-day' + wk + '" role="columnheader">' + dayShort(di) + '<span class="dom">' + d.getDate() + '</span></div>';
+    });
+    grid += '</div>';
+    HOURS.forEach((h, r) => {
+      grid += '<div class="g-row" role="row"><div class="g-time" role="rowheader">' + fmtHour(h) + '</div>';
+      DAYS.forEach((_, di) => {
+        grid += '<div class="cell" role="gridcell" tabindex="' + (r === 0 && di === 0 ? 0 : -1) + '" data-d="' + di + '" data-h="' + h + '" aria-selected="false"></div>';
+      });
+      grid += '</div>';
+    });
+    grid += '</div>';
+
+    return '<div class="layout"><section>' +
+      '<div class="page-head"><h1>When are you free?</h1>' +
+        '<p id="gridHelp">Click and drag to paint the hours that work for you. Brighter squares mean more of the group is free. ' +
+        '<span class="sr-only">Keyboard: arrow keys move, Space or Enter toggles an hour, Shift plus an arrow paints as you move.</span></p></div>' +
+      '<div class="invite"><span aria-hidden="true">🔗</span><span class="grow">Invite link for <strong>' + esc(state.title) + '</strong> <code>bloom.plan/' + esc(slug(state.title)) + '</code></span>' +
+        '<button type="button" class="btn small ghost" id="copyLink">Copy link</button></div>' +
+      '<div class="panel">' +
+        '<div class="grid-tools">' +
+          '<button type="button" class="chip-btn" data-fill="evenings">🌙 Evenings</button>' +
+          '<button type="button" class="chip-btn" data-fill="weekend">☀️ Weekend</button>' +
+          '<button type="button" class="chip-btn" data-fill="clear">Clear mine</button>' +
+          '<span class="spacer"></span>' +
+          '<div class="legend" aria-hidden="true"><span>Nobody</span><span class="ramp"></span><span>Everyone</span>' +
+          '<span><span class="me-swatch"></span> You</span><span><span class="best-swatch"></span> Best</span></div>' +
+        '</div>' +
+        grid +
+      '</div>' +
+      '<div class="times-after">' +
+        '<div><h2 style="font-size:22px">Best times so far</h2><ul class="best-list" id="bestList" aria-live="polite"></ul></div>' +
+        '<div><button type="button" class="btn" id="toPlaces">Next: where to go →</button><p class="hint-inline" id="toPlacesHint"></p></div>' +
+      '</div>' +
+    '</section>' + sidebarHTML() + '</div>';
+  }
+  function slug(s) { return (s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'plan').slice(0, 24); }
+
+  function cellLabel(di, h) {
+    const k = key(di, h);
+    const who = freeAt(di, h);
+    const mine = state.me.avail.has(k);
+    const others = who.filter((p) => p !== state.me);
+    return dayLong(di) + ' ' + fmtHour(h) + '. ' + (mine ? 'You’re free.' : 'You’re not marked free.') + ' ' +
+      who.length + ' of ' + total() + ' free' + (others.length ? ': ' + others.map((p) => p.name).join(', ') : '') + '.';
+  }
+  let bestKeys = new Set();
+  function updateCell(el) {
+    const di = +el.dataset.d, h = +el.dataset.h;
+    const k = key(di, h);
+    const n = freeAt(di, h).length;
+    el.style.setProperty('--heat', (n / total()).toFixed(3));
+    const mine = state.me.avail.has(k);
+    el.classList.toggle('mine', mine);
+    el.setAttribute('aria-selected', String(mine));
+    el.classList.toggle('best', bestKeys.has(k));
+    el.classList.toggle('full', n === total());
+    el.setAttribute('aria-label', cellLabel(di, h));
+  }
+  function updateAllCells() {
+    const runs = computeRuns();
+    bestKeys = new Set();
+    const top = runs[0];
+    if (top && top.who.length > 1) {
+      for (let h = top.start; h < top.end; h++) bestKeys.add(key(top.d, h));
+    }
+    $$('#grid .cell').forEach(updateCell);
+  }
+  function renderBest() {
+    const ul = $('#bestList');
+    if (!ul) return;
+    const runs = computeRuns().filter((r) => r.who.length > 1).slice(0, 3);
+    if (!runs.length) {
+      ul.innerHTML = '<li class="empty">Paint a few hours — matches with your friends will show up here.</li>';
+    } else {
+      ul.innerHTML = runs.map((r, i) => {
+        const everyone = r.who.length === total();
+        return '<li class="' + (i === 0 ? 'top' : '') + '">' + (i === 0 ? '<span aria-hidden="true">⭐</span>' : '') +
+          '<div class="grow"><div class="when">' + dayLong(r.d) + ' ' + fmtRange(r.start, r.end) + '</div>' +
+          '<div class="count">' + (everyone ? 'Everyone’s free 🎉' : r.who.length + ' of ' + total() + ' free') + '</div></div>' +
+          avatarStack(r.who) + '</li>';
+      }).join('');
+    }
+    const btn = $('#toPlaces'), hint = $('#toPlacesHint');
+    if (btn) {
+      btn.disabled = !state.me.avail.size;
+      hint.textContent = state.me.avail.size ? state.me.avail.size + ' hours marked free' : 'Paint at least one hour to continue';
+    }
+  }
+
+  function setMine(k, on) {
+    if (on) state.me.avail.add(k); else state.me.avail.delete(k);
+  }
+
+  function bindTimes() {
+    const grid = $('#grid');
+    let painting = false, paintVal = true, last = null;
+
+    const cellAt = (di, h) => grid.querySelector('.cell[data-d="' + di + '"][data-h="' + h + '"]');
+    const applyTo = (el) => {
+      if (!el || el === last) return;
+      // Fill any cells skipped by a fast pointer movement.
+      if (last) {
+        const d0 = +last.dataset.d, h0 = +last.dataset.h, d1 = +el.dataset.d, h1 = +el.dataset.h;
+        const steps = Math.max(Math.abs(d1 - d0), Math.abs(h1 - h0));
+        for (let i = 1; i < steps; i++) {
+          paintOne(cellAt(Math.round(d0 + (d1 - d0) * i / steps), Math.round(h0 + (h1 - h0) * i / steps)));
+        }
+      }
+      last = el;
+      paintOne(el);
+    };
+    const paintOne = (el) => {
+      if (!el) return;
+      const k = key(+el.dataset.d, +el.dataset.h);
+      if (state.me.avail.has(k) === paintVal) return;
+      setMine(k, paintVal);
+      updateCell(el);
+      if (!reduceMotion) { el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+    };
+
+    grid.addEventListener('pointerdown', (e) => {
+      const el = e.target.closest('.cell');
+      if (!el || e.button > 0) return;
+      e.preventDefault();
+      painting = true; last = null;
+      paintVal = !state.me.avail.has(key(+el.dataset.d, +el.dataset.h));
+      grid.setPointerCapture(e.pointerId);
+      focusCell(el, false);
+      applyTo(el);
+    });
+    grid.addEventListener('pointermove', (e) => {
+      if (!painting) return;
+      const t = document.elementFromPoint(e.clientX, e.clientY);
+      applyTo(t && t.closest ? t.closest('#grid .cell') : null);
+    });
+    const end = () => {
+      if (!painting) return;
+      painting = false;
+      afterMineChanged();
+    };
+    grid.addEventListener('pointerup', end);
+    grid.addEventListener('pointercancel', end);
+
+    // Roving-tabindex keyboard support.
+    grid.addEventListener('keydown', (e) => {
+      const el = e.target.closest('.cell');
+      if (!el) return;
+      let di = +el.dataset.d, h = +el.dataset.h;
+      const moves = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      if (moves[e.key]) {
+        e.preventDefault();
+        di = Math.max(0, Math.min(DAYS.length - 1, di + moves[e.key][0]));
+        h = Math.max(HOURS[0], Math.min(HOURS[HOURS.length - 1], h + moves[e.key][1]));
+        const next = grid.querySelector('.cell[data-d="' + di + '"][data-h="' + h + '"]');
+        if (e.shiftKey) { setMine(key(di, h), true); afterMineChanged(); }
+        focusCell(next, true);
+      } else if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        const k = key(di, h);
+        setMine(k, !state.me.avail.has(k));
+        afterMineChanged();
+        announce(cellLabel(di, h));
+      }
+    });
+
+    $$('[data-fill]').forEach((b) => b.addEventListener('click', () => {
+      const mode = b.dataset.fill;
+      if (mode === 'clear') state.me.avail.clear();
+      DAYS.forEach((d, di) => {
+        const dow = d.getDay();
+        HOURS.forEach((h) => {
+          if (mode === 'evenings' && h >= 18) setMine(key(di, h), true);
+          if (mode === 'weekend' && (dow === 0 || dow === 6) && h >= 12) setMine(key(di, h), true);
+        });
+      });
+      afterMineChanged();
+      announce(mode === 'clear' ? 'Cleared your hours.' : 'Added ' + (mode === 'evenings' ? 'evenings' : 'weekend afternoons') + '. ' + state.me.avail.size + ' hours marked free.');
+    }));
+
+    $('#copyLink').addEventListener('click', () => copy(location.origin === 'null' || location.protocol === 'file:' ? 'https://bloom.plan/' + slug(state.title) : location.href.split('#')[0] + '#/', 'Invite link copied'));
+    $('#toPlaces').addEventListener('click', () => go('places'));
+
+    updateAllCells();
+    renderBest();
+    simulateTimes();
+  }
+  function focusCell(el, focus) {
+    if (!el) return;
+    $$('#grid .cell[tabindex="0"]').forEach((c) => c.setAttribute('tabindex', '-1'));
+    el.setAttribute('tabindex', '0');
+    if (focus) el.focus();
+  }
+  function afterMineChanged() {
+    store.set('bloom.avail', JSON.stringify(Array.from(state.me.avail)));
+    refresh();
+  }
+
+  function simulateTimes() {
+    if (state.sim.times) return;
+    state.sim.times = true;
+    state.friends.forEach((f, i) => {
+      later('sim', () => {
+        f.joined = true;
+        toast(f, f.name + ' joined ' + state.title);
+        announce(f.name + ' joined the plan and is adding their free times.');
+        const cells = [];
+        DAYS.forEach((d, di) => {
+          (f.pattern[d.getDay()] || []).forEach((range) => {
+            for (let h = range[0]; h < range[1]; h++) if (HOURS.indexOf(h) > -1) cells.push(key(di, h));
+          });
+        });
+        if (reduceMotion) { cells.forEach((c) => f.avail.add(c)); refresh(); return; }
+        cells.forEach((c, j) => later('sim', () => { f.avail.add(c); refresh(); }, j * 45));
+      }, 1200 + i * 2200);
+    });
+  }
+
+  // ---------- Step 2: places ----------
+  function placesHTML() {
+    return '<div class="layout"><section>' +
+      '<div class="page-head"><h1>Where should we go?</h1>' +
+        '<p>Swipe right for yes, left for nope, up for maybe. Your friends are voting too.</p></div>' +
+      '<div class="places-layout">' +
+        '<div class="deck-wrap">' +
+          '<div class="deck" id="deck"></div>' +
+          '<div class="vote-btns" id="voteBtns">' +
+            '<button type="button" class="vote no" data-vote="-1" aria-label="Nope">✕</button>' +
+            '<button type="button" class="vote maybe" data-vote="0" aria-label="Maybe">🤷</button>' +
+            '<button type="button" class="vote yes" data-vote="1" aria-label="Yes">♥</button>' +
+          '</div>' +
+          '<p class="kbd-hint">Keyboard: <kbd>←</kbd> nope · <kbd>↑</kbd> maybe · <kbd>→</kbd> yes</p>' +
+        '</div>' +
+        '<div class="panel"><h2 style="font-size:22px">Group favourites</h2>' +
+          '<ol class="rank-list" id="rankList" aria-live="polite"></ol>' +
+          '<div style="margin-top:20px"><button type="button" class="btn" id="toBloom">See the plan bloom →</button>' +
+          '<p class="hint-inline" id="toBloomHint" style="text-align:left"></p></div>' +
+        '</div>' +
+      '</div>' +
+    '</section>' + sidebarHTML() + '</div>';
+  }
+
+  function cardHTML(pl, depth) {
+    const top = depth === 0;
+    return '<article class="card" data-id="' + pl.id + '" data-depth="' + depth + '" style="--depth:' + depth + ';--hue:' + pl.hue + '"' +
+      (top ? ' tabindex="0" aria-label="' + esc(pl.name + ', ' + pl.kind + ', ' + pl.price + ', ' + pl.dist + ' away. ' + pl.blurb + ' ' + pl.tags.join(', ')) + '"' : ' aria-hidden="true"') + '>' +
+      '<span class="stamp yes" aria-hidden="true">YES!</span><span class="stamp no" aria-hidden="true">NOPE</span><span class="stamp maybe" aria-hidden="true">MAYBE</span>' +
+      '<div class="card-art"><span aria-hidden="true">' + pl.emoji + '</span><span class="kind">' + esc(pl.kind) + '</span></div>' +
+      '<div class="card-body"><h3>' + esc(pl.name) + '</h3>' +
+        '<div class="meta"><span>' + esc(pl.price) + '</span><span>' + esc(pl.dist) + '</span></div>' +
+        '<p class="blurb">' + esc(pl.blurb) + '</p>' +
+        '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' +
+        (pl.outdoor ? '<div class="wx" data-wx hidden></div>' : '') +
+        '<div class="card-friends" data-friends="' + pl.id + '"></div>' +
+      '</div></article>';
+  }
+
+  function renderDeck() {
+    const deck = $('#deck');
+    if (!deck) return;
+    const rest = PLACES.slice(state.deckIndex);
+    $$('#voteBtns button').forEach((b) => { b.disabled = !rest.length; });
+    if (!rest.length) {
+      deck.innerHTML = '<div class="deck-done"><div class="big" aria-hidden="true">🌸</div><h3>All swiped!</h3><p class="empty">Check the group favourites, then see your plan bloom.</p></div>';
+      return;
+    }
+    deck.innerHTML = rest.slice(0, 3).map((pl, i) => cardHTML(pl, i)).reverse().join('');
+    updateCardFriends();
+    updateWeatherEls();
+    bindDrag(deck.querySelector('.card[data-depth="0"]'));
+  }
+
+  function updateCardFriends() {
+    $$('[data-friends]').forEach((el) => {
+      const id = el.dataset.friends;
+      const yes = state.friends.filter((f) => f.votes[id] === 1);
+      el.innerHTML = yes.length ? avatarStack(yes) + '<span>' + esc(namesList(yes)) + ' said yes</span>' : '<span>No friend votes yet</span>';
+    });
+  }
+
+  function bindDrag(card) {
+    if (!card) return;
+    let sx = 0, sy = 0, dx = 0, dy = 0, dragging = false;
+    const yes = card.querySelector('.stamp.yes'), no = card.querySelector('.stamp.no'), maybe = card.querySelector('.stamp.maybe');
+    card.addEventListener('pointerdown', (e) => {
+      if (e.button > 0) return;
+      dragging = true; sx = e.clientX; sy = e.clientY; dx = dy = 0;
+      card.setPointerCapture(e.pointerId);
+      card.classList.add('dragging');
+    });
+    card.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      dx = e.clientX - sx; dy = e.clientY - sy;
+      card.style.transform = 'translate(' + dx + 'px,' + dy + 'px) rotate(' + dx / 14 + 'deg)';
+      yes.style.opacity = Math.max(0, Math.min(1, dx / 100));
+      no.style.opacity = Math.max(0, Math.min(1, -dx / 100));
+      maybe.style.opacity = Math.abs(dx) < 60 ? Math.max(0, Math.min(1, -dy / 100)) : 0;
+    });
+    const up = () => {
+      if (!dragging) return;
+      dragging = false;
+      card.classList.remove('dragging');
+      if (dx > 110) vote(1);
+      else if (dx < -110) vote(-1);
+      else if (dy < -110 && Math.abs(dx) < 80) vote(0);
+      else { card.style.transform = ''; yes.style.opacity = no.style.opacity = maybe.style.opacity = 0; }
+    };
+    card.addEventListener('pointerup', up);
+    card.addEventListener('pointercancel', up);
+  }
+
+  let voting = false;
+  function vote(v) {
+    if (voting || state.deckIndex >= PLACES.length) return;
+    voting = true;
+    const pl = PLACES[state.deckIndex];
+    const card = $('#deck .card[data-depth="0"]');
+    state.me.votes[pl.id] = v;
+    const word = v === 1 ? 'Yes' : v === 0 ? 'Maybe' : 'Nope';
+    if (card) {
+      card.style.transform = '';
+      card.classList.add(v === 1 ? 'fly-yes' : v === 0 ? 'fly-maybe' : 'fly-no');
+      const st = card.querySelector('.stamp.' + (v === 1 ? 'yes' : v === 0 ? 'maybe' : 'no'));
+      if (st) st.style.opacity = 1;
+    }
+    later('deck', () => {
+      voting = false;
+      state.deckIndex++;
+      renderDeck();
+      refresh();
+      const next = PLACES[state.deckIndex];
+      announce(word + ' to ' + pl.name + '. ' + (next ? 'Next: ' + next.name + ', ' + next.kind + '.' : 'That was the last place.'));
+      const top = $('#deck .card[data-depth="0"]');
+      if (top && !(document.activeElement && document.activeElement.closest('#voteBtns'))) top.focus({ preventScroll: true });
+    }, reduceMotion ? 10 : 320);
+  }
+
+  function renderRanking() {
+    const ol = $('#rankList');
+    if (!ol) return;
+    const ranked = rankPlaces().filter((p) => p.voters);
+    if (!ranked.length) {
+      ol.innerHTML = '<li class="empty" style="display:block">Votes will appear here as people swipe.</li>';
+    } else {
+      ol.innerHTML = ranked.map((p) =>
+        '<li><span class="emoji" aria-hidden="true">' + p.emoji + '</span>' +
+        '<div><div class="name">' + esc(p.name) + '</div>' +
+        '<div class="bar" aria-hidden="true"><i style="--w:' + Math.round((p.points / (2 * total())) * 100) + '%"></i></div>' +
+        '<span class="sr-only">' + p.yes.length + ' yes, ' + p.maybe.length + ' maybe, ' + p.no.length + ' no.</span></div>' +
+        avatarStack(p.yes) + '</li>').join('');
+    }
+    const btn = $('#toBloom'), hint = $('#toBloomHint');
+    if (btn) {
+      const left = PLACES.length - state.deckIndex;
+      btn.disabled = left > 0;
+      hint.textContent = left > 0 ? left + ' more to swipe' : 'Ready when you are';
+    }
+  }
+
+  function bindPlaces() {
+    renderDeck();
+    renderRanking();
+    $('#voteBtns').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-vote]');
+      if (b) vote(+b.dataset.vote);
+    });
+    $('#toBloom').addEventListener('click', () => go('bloom'));
+    simulateTimes(); // in case someone jumps straight here
+    simulateVotes();
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (state.step !== 'places') return;
+    if (e.target.matches && e.target.matches('input, textarea')) return;
+    if (e.target.closest && e.target.closest('#grid')) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); vote(1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); vote(-1); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); vote(0); }
+  });
+
+  function simulateVotes() {
+    if (state.sim.votes) return;
+    state.sim.votes = true;
+    state.friends.forEach((f, i) => {
+      PLACES.forEach((pl, j) => {
+        later('sim', () => {
+          f.joined = true;
+          f.votes[pl.id] = FRIEND_VOTES[f.id][pl.id];
+          if (j === PLACES.length - 1) toast(f, f.name + ' finished voting');
+          refresh();
+        }, 900 + i * 650 + j * 1100);
+      });
+    });
+  }
+
+  // ---------- Step 3: bloom ----------
+  function bloomHTML() {
+    const score = bloomScore();
+    const runs = computeRuns().filter((r) => r.who.includes(state.me)).slice(0, 3);
+    const places = rankPlaces().slice(0, 3);
+    if (!runs.find((r) => r.id === state.pickRun)) state.pickRun = runs[0] ? runs[0].id : null;
+    if (!places.find((p) => p.id === state.pickPlace)) state.pickPlace = places[0].id;
+
+    return '<section class="bloom-stage">' +
+      '<div><div>' + flowerSVG({ stem: true }) + '</div>' +
+        '<h1 class="bloom-title">' + (score >= 80 ? 'It’s a plan! 🌸' : 'Almost in bloom') + '</h1>' +
+        '<p class="bloom-sub"><strong data-bloom-score>' + score + '%</strong> in bloom · ' +
+          (score >= 80 ? 'Everyone’s on board.' : 'A few people are still deciding — you can lock it in anyway.') + '</p>' +
+      '</div>' +
+      '<div><article class="plan-card" id="planCard" aria-labelledby="planTitle"></article>' +
+        '<details class="tweak"><summary>Change the time or place</summary>' +
+          '<fieldset class="choice-group"><legend>Time</legend><div class="choices">' +
+            runs.map((r) => '<label><input type="radio" name="run" value="' + r.id + '"' + (r.id === state.pickRun ? ' checked' : '') + '>' +
+              dayShort(r.d) + ' ' + fmtRange(r.start, r.end) + ' · ' + r.who.length + '/' + total() + '</label>').join('') +
+          '</div></fieldset>' +
+          '<fieldset class="choice-group"><legend>Place</legend><div class="choices">' +
+            places.map((p) => '<label><input type="radio" name="place" value="' + p.id + '"' + (p.id === state.pickPlace ? ' checked' : '') + '>' +
+              p.emoji + ' ' + esc(p.name) + '</label>').join('') +
+          '</div></fieldset>' +
+        '</details>' +
+      '</div>' +
+    '</section>';
+  }
+
+  function weatherRow(run, pl) {
+    const w = weatherAt(run.d, run.start);
+    let v, sub;
+    if (w) {
+      v = wxText(w);
+      sub = (pl.outdoor && w.pop >= 50 ? 'Rain likely for an outdoor plan — consider an indoor pick. ' : '') + 'Forecast for ' + WEATHER.place + ' · ';
+    } else if (WEATHER.status === 'loading' || WEATHER.status === 'idle') {
+      v = 'Checking the forecast…'; sub = '';
+    } else {
+      v = 'Forecast not available yet'; sub = 'Forecasts cover the next 7 days · ';
+    }
+    return '<div class="plan-row"><span class="ico" aria-hidden="true">🌦️</span><div><div class="k">Weather</div>' +
+      '<div class="v">' + esc(v) + '</div><div class="sub">' + esc(sub) +
+      '<button type="button" class="link-btn" id="useLoc">Use my location</button> · data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></div></div></div>';
+  }
+
+  function renderPlanCard() {
+    const run = computeRuns().find((r) => r.id === state.pickRun) || chosenRun();
+    const pl = chosenPlace();
+    const card = $('#planCard');
+    if (!card || !run) return;
+    const out = people().filter((p) => run.who.indexOf(p) === -1);
+    card.innerHTML =
+      '<header><div class="tiny">You’re all set</div><h2 id="planTitle">' + esc(state.title) + '</h2></header>' +
+      '<div class="plan-rows">' +
+        '<div class="plan-row"><span class="ico" aria-hidden="true">🗓️</span><div><div class="k">When</div>' +
+          '<div class="v">' + dateLong(run.d) + '</div><div class="sub">' + fmtHour(run.start) + ' – ' + fmtHour(run.end) + '</div></div></div>' +
+        '<div class="plan-row"><span class="ico" aria-hidden="true">' + pl.emoji + '</span><div><div class="k">Where</div>' +
+          '<div class="v">' + esc(pl.name) + '</div><div class="sub">' + esc(pl.kind + ' · ' + pl.price + ' · ' + pl.dist + ' · ' + pl.tags.join(', ')) + '</div></div></div>' +
+        weatherRow(run, pl) +
+        '<div class="plan-row"><span class="ico" aria-hidden="true">👯</span><div><div class="k">Who’s coming · ' + run.who.length + ' of ' + total() + '</div>' +
+          '<div class="going">' +
+            run.who.map((p) => '<span class="pill">' + avatar(p, 'sm') + esc(displayName(p)) + '</span>').join('') +
+            out.map((p) => '<span class="pill out">' + avatar(p, 'sm') + esc(p.name) + '<span class="sr-only"> can’t make this time</span></span>').join('') +
+          '</div></div></div>' +
+      '</div>' +
+      '<div class="plan-actions">' +
+        '<button type="button" class="btn" id="addCal">📅 Add to calendar</button>' +
+        '<button type="button" class="btn ghost" id="copyInvite">Copy invite</button>' +
+        '<button type="button" class="btn ghost" id="restart">New plan</button>' +
+      '</div>';
+    $('#addCal').addEventListener('click', () => downloadICS(run, pl));
+    $('#useLoc').addEventListener('click', useMyLocation);
+    $('#copyInvite').addEventListener('click', () => copy(
+      '🌸 ' + state.title + '\n🗓️ ' + dateLong(run.d) + ', ' + fmtHour(run.start) + '–' + fmtHour(run.end) +
+      '\n📍 ' + pl.name + ' (' + pl.dist + ')\n👯 ' + run.who.map((p) => p.name).join(', ') + '\nPlanned with Bloom', 'Invite copied — paste it in the group chat'));
+    $('#restart').addEventListener('click', restart);
+  }
+
+  function bindBloom() {
+    renderPlanCard();
+    $$('input[name="run"]').forEach((r) => r.addEventListener('change', () => { state.pickRun = r.value; renderPlanCard(); announce('Time changed.'); }));
+    $$('input[name="place"]').forEach((r) => r.addEventListener('change', () => { state.pickPlace = r.value; renderPlanCard(); announce('Place changed.'); }));
+    // Let the flower open from a bud for the big reveal.
+    if (!reduceMotion) {
+      $$('.bloom-stage .petal').forEach((p) => p.style.setProperty('--s', '0.1'));
+      requestAnimationFrame(() => requestAnimationFrame(() => { updateFlowers(); }));
+      if (bloomScore() >= 80) setTimeout(confetti, 450);
+    }
+  }
+
+  function restart() {
+    clearTimers('sim');
+    state.me.avail.clear();
+    state.me.votes = {};
+    state.friends.forEach((f) => { f.avail.clear(); f.votes = {}; f.joined = false; });
+    state.sim = { times: false, votes: false };
+    state.deckIndex = 0;
+    state.pickRun = state.pickPlace = null;
+    store.set('bloom.avail', '[]');
+    go('home');
+  }
+
+  function confetti() {
+    const layer = document.createElement('div');
+    layer.className = 'confetti';
+    layer.setAttribute('aria-hidden', 'true');
+    const colors = people().map((p) => p.color).concat(['#F5A524']);
+    for (let i = 0; i < 40; i++) {
+      const p = document.createElement('i');
+      p.style.left = Math.random() * 100 + 'vw';
+      p.style.setProperty('--c', colors[i % colors.length]);
+      p.style.setProperty('--d', (2.2 + Math.random() * 1.6) + 's');
+      p.style.setProperty('--delay', (Math.random() * 0.6) + 's');
+      p.style.setProperty('--x', (Math.random() * 160 - 80) + 'px');
+      p.style.setProperty('--r', (Math.random() * 720 - 360) + 'deg');
+      layer.appendChild(p);
+    }
+    document.body.appendChild(layer);
+    setTimeout(() => layer.remove(), 4500);
+  }
+
+  // ---------- Utilities ----------
+  function downloadICS(run, pl) {
+    const d = DAYS[run.d];
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = (h) => d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(h) + '0000';
+    const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const ics = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Bloom//Group Plans//EN', 'BEGIN:VEVENT',
+      'UID:' + Date.now() + '@bloom.plan', 'DTSTAMP:' + now,
+      'DTSTART:' + stamp(run.start), 'DTEND:' + stamp(run.end),
+      'SUMMARY:' + state.title, 'LOCATION:' + pl.name,
+      'DESCRIPTION:With ' + run.who.map((p) => p.name).join(', ') + '. Planned with Bloom.',
+      'END:VEVENT', 'END:VCALENDAR',
+    ].join('\r\n');
+    const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = slug(state.title) + '.ics';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(null, '📅 Calendar event downloaded');
+    announce('Calendar event downloaded.');
+  }
+
+  function copy(text, msg) {
+    const done = () => { toast(null, msg); announce(msg); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+    } else {
+      done();
+    }
+  }
+
+  // ---------- Theme ----------
+  const themeBtn = $('#themeToggle');
+  function currentTheme() {
+    const set = document.documentElement.getAttribute('data-theme');
+    if (set) return set;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function syncThemeBtn() {
+    const t = currentTheme();
+    themeBtn.setAttribute('aria-label', t === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+    themeBtn.innerHTML = t === 'dark'
+      ? '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="5" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1v3M12 20v3M1 12h3M20 12h3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></g></svg>'
+      : '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+  }
+  const savedTheme = store.get('bloom.theme');
+  if (savedTheme === 'dark' || savedTheme === 'light') document.documentElement.setAttribute('data-theme', savedTheme);
+  themeBtn.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    store.set('bloom.theme', next);
+    syncThemeBtn();
+  });
+  syncThemeBtn();
+
+  // ---------- Weather (Open-Meteo, free, no API key) ----------
+  const WEATHER = { lat: 1.2897, lon: 103.8501, place: 'Singapore', hourly: null, status: 'idle' };
+  const pad2 = (n) => String(n).padStart(2, '0');
+  async function loadWeather() {
+    WEATHER.status = 'loading';
+    try {
+      const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + WEATHER.lat + '&longitude=' + WEATHER.lon +
+        '&hourly=temperature_2m,precipitation_probability,weather_code&forecast_days=8&timezone=auto';
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const j = await res.json();
+      const map = {};
+      j.hourly.time.forEach((t, i) => {
+        map[t] = { temp: j.hourly.temperature_2m[i], pop: j.hourly.precipitation_probability[i], code: j.hourly.weather_code[i] };
+      });
+      WEATHER.hourly = map;
+      WEATHER.status = 'ok';
+    } catch (e) {
+      WEATHER.status = 'error';
+    }
+    updateWeatherEls();
+    if (state.step === 'bloom') renderPlanCard();
+  }
+  function weatherAt(di, h) {
+    if (!WEATHER.hourly) return null;
+    const d = DAYS[di];
+    return WEATHER.hourly[d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + 'T' + pad2(h) + ':00'] || null;
+  }
+  function wxIcon(c) {
+    if (c === 0) return '☀️';
+    if (c <= 2) return '🌤️';
+    if (c === 3) return '☁️';
+    if (c === 45 || c === 48) return '🌫️';
+    if (c >= 95) return '⛈️';
+    if ((c >= 71 && c <= 77) || c === 85 || c === 86) return '❄️';
+    return '🌧️';
+  }
+  function wxText(w) { return wxIcon(w.code) + ' ' + Math.round(w.temp) + '°C · ' + w.pop + '% chance of rain'; }
+  function updateWeatherEls() {
+    const run = computeRuns()[0];
+    $$('[data-wx]').forEach((el) => {
+      const w = run && weatherAt(run.d, run.start);
+      if (!w) { el.hidden = true; return; }
+      el.hidden = false;
+      el.classList.toggle('warn', w.pop >= 50);
+      el.textContent = 'Forecast ' + dayShort(run.d) + ' ' + fmtHour(run.start) + ': ' + wxText(w) + (w.pop >= 50 ? ' — maybe bring a plan B' : '');
+    });
+  }
+  function useMyLocation() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      WEATHER.lat = pos.coords.latitude.toFixed(3);
+      WEATHER.lon = pos.coords.longitude.toFixed(3);
+      WEATHER.place = 'your location';
+      announce('Updating the forecast for your location.');
+      loadWeather();
+    }, () => toast(null, 'Location not shared — showing Singapore weather'));
+  }
+
+  // ---------- Boot ----------
+  const savedName = store.get('bloom.name');
+  if (savedName) state.me.name = savedName;
+  try {
+    const saved = JSON.parse(store.get('bloom.avail') || '[]');
+    if (Array.isArray(saved)) saved.forEach((k) => state.me.avail.add(k));
+  } catch (e) { /* ignore */ }
+
+  loadWeather();
+  const initial = location.hash.replace('#/', '') || 'home';
+  go(['home', 'times', 'places', 'bloom'].indexOf(initial) > -1 ? initial : 'home', false);
+})();

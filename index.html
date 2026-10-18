@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bloom — plans that actually happen</title>
+  <meta name="description" content="Paint when you're free, swipe on where to go, and watch your group's plan bloom.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <a class="brand" href="#/" aria-label="Bloom home">
+      <img src="icon.svg" width="32" height="32" alt="">
+      <span>Bloom</span>
+    </a>
+
+    <nav aria-label="Plan steps">
+      <ol class="stepper" id="stepper">
+        <li><button type="button" data-step="times"><span class="num">1</span><span class="lbl">When</span></button></li>
+        <li><button type="button" data-step="places"><span class="num">2</span><span class="lbl">Where</span></button></li>
+        <li><button type="button" data-step="bloom"><span class="num">3</span><span class="lbl">Bloom</span></button></li>
+      </ol>
+    </nav>
+
+    <button type="button" class="icon-btn" id="themeToggle" aria-label="Switch to dark theme">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </header>
+
+  <main id="main" tabindex="-1"></main>
+
+  <div id="live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+  <div id="toasts" class="toasts" aria-hidden="true"></div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
