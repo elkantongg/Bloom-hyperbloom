@@ -29,6 +29,7 @@ STATIC = {
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
+    "/favicon.ico": ("icon.svg", "image/svg+xml"),
 }
 
 COLORS = ["#2F6FEB", "#E4477A", "#D9831A", "#7C5CFF", "#11966A", "#0E8E9C", "#B4469B", "#8A6D1F", "#C2410C", "#4F46E5", "#0F766E", "#BE185D"]

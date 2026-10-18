@@ -8,7 +8,8 @@
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motionMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reduceMotion = motionMQ.matches;
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } },
@@ -77,6 +78,8 @@
     friends: FRIENDS.map((f) => Object.assign({}, f, { avail: new Set(), votes: {}, joined: false })),
     sim: { times: false, votes: false },
     deckIndex: 0,
+    milestones: {},
+    coachDone: { grid: false, deck: false },
     pickRun: null,
     pickPlace: null,
   };
@@ -234,7 +237,8 @@
       if (core) core.setAttribute('r', String(14 + score * 0.12));
       svg.setAttribute('aria-label', flowerLabel());
     });
-    $$('[data-bloom-score]').forEach((el) => { el.textContent = score + '%'; });
+    $$('[data-bloom-score]').forEach((el) => { el.textContent = score ? score + '%' : '🌱'; });
+    $$('[data-bloom-label]').forEach((el) => { el.textContent = score ? 'in bloom' : 'just planted'; });
   }
 
   // ---------- Sidebar ----------
@@ -243,7 +247,7 @@
       '<div class="panel group">' +
         '<div class="flower-wrap">' + flowerSVG() + '</div>' +
         '<div>' +
-          '<div class="bloom-meter"><strong data-bloom-score>0%</strong><span>in bloom</span></div>' +
+          '<div class="bloom-meter"><strong data-bloom-score>🌱</strong><span data-bloom-label>just planted</span></div>' +
           '<h2 class="sr-only">Who’s in</h2>' +
           '<ul class="people" id="people"></ul>' +
         '</div>' +
@@ -282,6 +286,7 @@
       updateStepper();
       if (state.step === 'times') { updateAllCells(); renderBest(); }
       if (state.step === 'places') { renderRanking(); updateCardFriends(); }
+      checkMilestones();
     });
   }
 
@@ -381,6 +386,7 @@
             '<p class="form-error" id="startError" role="alert"></p>' +
             '<button class="btn" type="submit" id="createBtn">Create group & get invite link →</button>' +
             '<button class="btn ghost" type="button" id="demoBtn">Just looking? Try a demo (nothing is saved)</button>' +
+            '<p class="reassure"><span>✓ No sign-ups</span><span>✓ Free</span><span>✓ About 2 minutes</span></p>' +
           '</form>' +
         '</div>' +
         '<div class="hero-art" aria-hidden="true">' +
@@ -390,11 +396,38 @@
           '<div class="floating f3">✨<div>Everyone’s free!<small>Sat 3–6pm</small></div></div>' +
         '</div>' +
       '</section>' +
+      versusHTML() +
+      '<h2 class="section-title">Three steps. Zero arguments.</h2>' +
       '<ol class="how">' +
-        '<li><span class="ico" aria-hidden="true">🖌️</span><h3>Paint your time</h3><p>Drag across the week. Brighter squares mean more friends are free, so the best time finds itself.</p></li>' +
-        '<li><span class="ico" aria-hidden="true">👆</span><h3>Swipe on places</h3><p>Yes, maybe, or nope. No debates, no “idk, you pick”. Accessibility info is on every card.</p></li>' +
-        '<li><span class="ico" aria-hidden="true">🌸</span><h3>Watch it bloom</h3><p>Each friend is a petal. When everyone’s in, you get one clear plan to add to your calendar.</p></li>' +
+        '<li><span class="step-n" aria-hidden="true">1</span><span class="ico" aria-hidden="true">🖌️</span><h3>Paint your time</h3><p>Drag across the hours you’re free. The brighter a square, the more friends can make it — the ⭐ is your sweet spot.</p></li>' +
+        '<li><span class="step-n" aria-hidden="true">2</span><span class="ico" aria-hidden="true">👆</span><h3>Swipe on places</h3><p>Love it, maybe, or pass. No debates, no “idk, you pick”. Step-free access is shown on every card.</p></li>' +
+        '<li><span class="step-n" aria-hidden="true">3</span><span class="ico" aria-hidden="true">🌸</span><h3>Watch it bloom</h3><p>Every friend is a petal. When everyone’s in, you get one plan to add to your calendar.</p></li>' +
       '</ol>';
+  }
+  function versusHTML() {
+    const chat = [
+      ['L', '#7C5CFF', 'anyone free this weekend??'],
+      ['M', '#E4477A', 'maybe sat? not morning tho'],
+      ['J', '#D9831A', 'i can do sun… or sat night'],
+      ['L', '#7C5CFF', 'ok where do we go'],
+      ['S', '#11966A', 'idk you pick 😅'],
+      ['M', '#E4477A', 'wait which day did we say'],
+    ];
+    return '<section class="versus" aria-labelledby="versusTitle">' +
+      '<h2 class="section-title" id="versusTitle">Sound familiar?</h2>' +
+      '<div class="versus-grid">' +
+        '<figure class="vs-card before"><figcaption><span class="vs-tag">Before</span> The group chat</figcaption>' +
+          '<ul class="chat">' + chat.map((c, i) => '<li style="--i:' + i + '"><span class="av sm" style="--c:' + c[1] + '" aria-hidden="true">' + c[0] + '</span><span class="bubble">' + c[2] + '</span></li>').join('') + '</ul>' +
+          '<p class="vs-foot">Scroll, scroll… still no plan. 😮‍💨</p></figure>' +
+        '<div class="vs-arrow" aria-hidden="true">→</div>' +
+        '<figure class="vs-card after"><figcaption><span class="vs-tag good">With Bloom</span> One clear answer</figcaption>' +
+          '<div class="mini-plan">' +
+            '<div class="mini-grid" aria-hidden="true">' + Array.from({ length: 21 }, (_, i) => '<i style="--h:' + [0, .2, .4, 1, 1, .6, .2][i % 7] * (i > 6 && i < 14 ? 1 : .55) + '"></i>').join('') + '</div>' +
+            '<p class="mp-when">⭐ Saturday 3–6pm</p><p class="mp-where">🍜 Lantern Noodle Bar</p>' +
+            '<p class="mp-who"><span class="av-stack">' + ['#2F6FEB', '#E4477A', '#D9831A', '#7C5CFF', '#11966A'].map((c, i) => '<span class="av sm" style="--c:' + c + '" aria-hidden="true">' + 'YMJPS'[i] + '</span>').join('') + '</span> 5 of 5 coming</p>' +
+          '</div>' +
+          '<p class="vs-foot">Decided in minutes, not days. 🌸</p></figure>' +
+      '</div></section>';
   }
   function myGroupsHTML() {
     const all = sessions();
@@ -473,7 +506,7 @@
 
     return '<div class="layout"><section>' +
       '<div class="page-head"><h1>When are you free?</h1>' +
-        '<p id="gridHelp">Click and drag to paint the hours that work for you. Brighter squares mean more of the group is free. ' +
+        '<p id="gridHelp">Drag across the hours that work for you. The brighter a square, the more friends are free — the ⭐ marks the sweet spot. ' +
         '<span class="sr-only">Keyboard: arrow keys move, Space or Enter toggles an hour, Shift plus an arrow paints as you move.</span></p></div>' +
       (state.mode === 'live'
         ? '<div class="invite"><span aria-hidden="true">🔗</span><span class="grow">Invite friends to <strong>' + esc(state.title) + '</strong> <code>' + esc(inviteLink()) + '</code>' +
@@ -484,17 +517,18 @@
         '<div class="grid-tools">' +
           '<button type="button" class="chip-btn" data-fill="evenings">🌙 Evenings</button>' +
           '<button type="button" class="chip-btn" data-fill="weekend">☀️ Weekend</button>' +
-          '<button type="button" class="chip-btn" data-fill="clear">Clear mine</button>' +
+          '<button type="button" class="chip-btn quiet" data-fill="clear">Clear mine</button>' +
           '<span class="spacer"></span>' +
           '<div class="legend" aria-hidden="true"><span>Nobody</span><span class="ramp"></span><span>Everyone</span>' +
           '<span><span class="me-swatch"></span> You</span><span><span class="best-swatch"></span> Best</span></div>' +
         '</div>' +
-        grid +
+        '<div class="grid-wrap">' + grid +
+          (!state.me.avail.size && !state.coachDone.grid ? '<div class="coach" id="coach" aria-hidden="true"><span class="hand">👆</span><span>Drag down a column to paint when you’re free</span></div>' : '') +
+        '</div>' +
       '</div>' +
-      '<div class="times-after">' +
-        '<div><h2 style="font-size:22px">Best times so far</h2><ul class="best-list" id="bestList" aria-live="polite"></ul></div>' +
-        '<div><button type="button" class="btn" id="toPlaces">Next: where to go →</button><p class="hint-inline" id="toPlacesHint"></p></div>' +
-      '</div>' +
+      '<div class="best-wrap"><h2 class="sub-title">Best times so far</h2><ul class="best-list" id="bestList" aria-live="polite"></ul></div>' +
+      '<div class="actionbar"><p class="ab-status" id="toPlacesHint"></p>' +
+        '<button type="button" class="btn" id="toPlaces">Next: pick places →</button></div>' +
     '</section>' + sidebarHTML() + '</div>';
   }
   function slug(s) { return (s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'plan').slice(0, 24); }
@@ -518,6 +552,8 @@
     el.setAttribute('aria-selected', String(mine));
     el.classList.toggle('best', bestKeys.has(k));
     el.classList.toggle('full', n === total());
+    el.classList.toggle('hot', n / total() > 0.55);
+    el.textContent = prefs.counts && n ? String(n) : '';
     el.setAttribute('aria-label', cellLabel(di, h));
   }
   function updateAllCells() {
@@ -547,7 +583,10 @@
     const btn = $('#toPlaces'), hint = $('#toPlacesHint');
     if (btn) {
       btn.disabled = !state.me.avail.size;
-      hint.textContent = state.me.avail.size ? state.me.avail.size + ' hours marked free' : 'Paint at least one hour to continue';
+      const best = runs[0];
+      hint.innerHTML = !state.me.avail.size ? '<span class="ab-ico">👆</span> Paint at least one hour to continue'
+        : '<span class="ab-ico ok">✓</span> ' + state.me.avail.size + ' hour' + (state.me.avail.size === 1 ? '' : 's') + ' painted' +
+          (best ? '<span class="ab-sub">Best so far: ' + esc(dayShort(best.d) + ' ' + fmtRange(best.start, best.end)) + '</span>' : '<span class="ab-sub">You can change these anytime</span>');
     }
   }
 
@@ -585,6 +624,8 @@
     grid.addEventListener('pointerdown', (e) => {
       const el = e.target.closest('.cell');
       if (!el || e.button > 0) return;
+      dismissCoach();
+      buzz(8);
       e.preventDefault();
       painting = true; last = null;
       paintVal = !state.me.avail.has(key(+el.dataset.d, +el.dataset.h));
@@ -620,6 +661,7 @@
         focusCell(next, true);
       } else if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
+        dismissCoach();
         const k = key(di, h);
         setMine(k, !state.me.avail.has(k));
         afterMineChanged();
@@ -629,6 +671,7 @@
 
     $$('[data-fill]').forEach((b) => b.addEventListener('click', () => {
       const mode = b.dataset.fill;
+      dismissCoach();
       if (mode === 'clear') state.me.avail.clear();
       DAYS.forEach((d, di) => {
         const dow = d.getDay();
@@ -647,6 +690,11 @@
     updateAllCells();
     renderBest();
     simulateTimes();
+  }
+  function dismissCoach() {
+    state.coachDone.grid = true;
+    const c = $('#coach');
+    if (c) { c.classList.add('gone'); setTimeout(() => c.remove(), 300); }
   }
   function focusCell(el, focus) {
     if (!el) return;
@@ -683,23 +731,24 @@
   function placesHTML() {
     return '<div class="layout"><section>' +
       '<div class="page-head"><h1>Where should we go?</h1>' +
-        '<p>Swipe right for yes, left for nope, up for maybe. Your friends are voting too.</p></div>' +
+        '<p>Swipe right if you’d love it, left to pass, up for maybe. There are no wrong answers — your friends are voting too.</p></div>' +
       '<div class="places-layout">' +
         '<div class="deck-wrap">' +
           '<div class="deck" id="deck"></div>' +
           '<div class="vote-btns" id="voteBtns">' +
-            '<button type="button" class="vote no" data-vote="-1" aria-label="Nope">✕</button>' +
-            '<button type="button" class="vote maybe" data-vote="0" aria-label="Maybe">🤷</button>' +
-            '<button type="button" class="vote yes" data-vote="1" aria-label="Yes">♥</button>' +
+            '<button type="button" class="vote no" data-vote="-1"><span class="v-ico" aria-hidden="true">✕</span><span class="v-lbl">Pass</span></button>' +
+            '<button type="button" class="vote maybe" data-vote="0"><span class="v-ico" aria-hidden="true">🤔</span><span class="v-lbl">Maybe</span></button>' +
+            '<button type="button" class="vote yes" data-vote="1"><span class="v-ico" aria-hidden="true">♥</span><span class="v-lbl">Love it</span></button>' +
           '</div>' +
-          '<p class="kbd-hint">Keyboard: <kbd>←</kbd> nope · <kbd>↑</kbd> maybe · <kbd>→</kbd> yes</p>' +
+          '<p class="kbd-hint">Keyboard: <kbd>←</kbd> pass · <kbd>↑</kbd> maybe · <kbd>→</kbd> love it</p>' +
         '</div>' +
         '<div class="panel"><h2 style="font-size:22px">Group favourites</h2>' +
           '<ol class="rank-list" id="rankList" aria-live="polite"></ol>' +
-          '<div style="margin-top:20px"><button type="button" class="btn" id="toBloom">See the plan bloom →</button>' +
-          '<p class="hint-inline" id="toBloomHint" style="text-align:left"></p></div>' +
         '</div>' +
       '</div>' +
+      '<div class="actionbar"><button type="button" class="btn ghost small" id="undoVote">↶ Undo</button>' +
+        '<p class="ab-status" id="toBloomHint"></p>' +
+        '<button type="button" class="btn" id="toBloom">See the plan bloom →</button></div>' +
     '</section>' + sidebarHTML() + '</div>';
   }
 
@@ -707,7 +756,7 @@
     const top = depth === 0;
     return '<article class="card" data-id="' + pl.id + '" data-depth="' + depth + '" style="--depth:' + depth + ';--hue:' + pl.hue + '"' +
       (top ? ' tabindex="0" aria-label="' + esc(pl.name + ', ' + pl.kind + ', ' + pl.price + ', ' + pl.dist + ' away. ' + pl.blurb + ' ' + pl.tags.join(', ')) + '"' : ' aria-hidden="true"') + '>' +
-      '<span class="stamp yes" aria-hidden="true">YES!</span><span class="stamp no" aria-hidden="true">NOPE</span><span class="stamp maybe" aria-hidden="true">MAYBE</span>' +
+      '<span class="stamp yes" aria-hidden="true">LOVE IT</span><span class="stamp no" aria-hidden="true">PASS</span><span class="stamp maybe" aria-hidden="true">MAYBE</span>' +
       '<div class="card-art"><span aria-hidden="true">' + pl.emoji + '</span><span class="kind">' + esc(pl.kind) + '</span></div>' +
       '<div class="card-body"><h3>' + esc(pl.name) + '</h3>' +
         '<div class="meta"><span>' + esc(pl.price) + '</span><span>' + esc(pl.dist) + '</span></div>' +
@@ -728,6 +777,11 @@
       return;
     }
     deck.innerHTML = rest.slice(0, 3).map((pl, i) => cardHTML(pl, i)).reverse().join('');
+    if (!state.coachDone.deck && !reduceMotion) {
+      state.coachDone.deck = true;
+      const t = deck.querySelector('.card[data-depth="0"]');
+      if (t) t.classList.add('hint-wiggle');
+    }
     updateCardFriends();
     updateWeatherEls();
     bindDrag(deck.querySelector('.card[data-depth="0"]'));
@@ -737,7 +791,7 @@
     $$('[data-friends]').forEach((el) => {
       const id = el.dataset.friends;
       const yes = state.friends.filter((f) => f.votes[id] === 1);
-      el.innerHTML = yes.length ? avatarStack(yes) + '<span>' + esc(namesList(yes)) + ' said yes</span>' : '<span>No friend votes yet</span>';
+      el.innerHTML = yes.length ? avatarStack(yes) + '<span>' + esc(namesList(yes)) + (yes.length === 1 ? ' loves' : ' love') + ' this</span>' : '<span>Be the first to vote on this one</span>';
     });
   }
 
@@ -747,6 +801,7 @@
     const yes = card.querySelector('.stamp.yes'), no = card.querySelector('.stamp.no'), maybe = card.querySelector('.stamp.maybe');
     card.addEventListener('pointerdown', (e) => {
       if (e.button > 0) return;
+      card.classList.remove('hint-wiggle');
       dragging = true; sx = e.clientX; sy = e.clientY; dx = dy = 0;
       card.setPointerCapture(e.pointerId);
       card.classList.add('dragging');
@@ -780,7 +835,8 @@
     const card = $('#deck .card[data-depth="0"]');
     state.me.votes[pl.id] = v;
     if (state.mode === 'live') saveSoon({ votes: Object.assign({}, state.me.votes) });
-    const word = v === 1 ? 'Yes' : v === 0 ? 'Maybe' : 'Nope';
+    const word = v === 1 ? 'Love it' : v === 0 ? 'Maybe' : 'Pass';
+    buzz(v === 1 ? [10, 40, 10] : 8);
     if (card) {
       card.style.transform = '';
       card.classList.add(v === 1 ? 'fly-yes' : v === 0 ? 'fly-maybe' : 'fly-no');
@@ -800,6 +856,21 @@
     }, reduceMotion ? 10 : 320);
   }
 
+  function undoVote() {
+    if (voting) return;
+    const lastIdx = (state.deckIndex >= PLACES.length ? PLACES.length : state.deckIndex) - 1;
+    const pl = PLACES[lastIdx];
+    if (!pl || !(pl.id in state.me.votes)) return;
+    delete state.me.votes[pl.id];
+    if (state.mode === 'live') saveSoon({ votes: Object.assign({}, state.me.votes) });
+    state.deckIndex = lastIdx;
+    renderDeck();
+    refresh();
+    announce('Undone. ' + pl.name + ' is back on top.');
+    const top = $('#deck .card[data-depth="0"]');
+    if (top) top.focus({ preventScroll: true });
+  }
+
   function renderRanking() {
     const ol = $('#rankList');
     if (!ol) return;
@@ -816,9 +887,13 @@
     }
     const btn = $('#toBloom'), hint = $('#toBloomHint');
     if (btn) {
-      const left = PLACES.length - state.deckIndex;
+      const done = Object.keys(state.me.votes).length;
+      const left = PLACES.length - done;
       btn.disabled = left > 0;
-      hint.textContent = left > 0 ? left + ' more to swipe' : 'Ready when you are';
+      hint.innerHTML = '<span class="ab-progress" aria-hidden="true"><i style="--w:' + Math.round(done / PLACES.length * 100) + '%"></i></span>' +
+        '<span>' + (left > 0 ? done + ' of ' + PLACES.length + ' swiped' + (left <= 2 ? ' — almost there!' : '') : '✓ All swiped — ready when you are') + '</span>';
+      const undo = $('#undoVote');
+      if (undo) undo.disabled = !done;
     }
   }
 
@@ -830,6 +905,7 @@
       if (b) vote(+b.dataset.vote);
     });
     $('#toBloom').addEventListener('click', () => go('bloom'));
+    $('#undoVote').addEventListener('click', undoVote);
     simulateTimes(); // in case someone jumps straight here
     simulateVotes();
   }
@@ -868,9 +944,10 @@
 
     return '<section class="bloom-stage">' +
       '<div><div>' + flowerSVG({ stem: true }) + '</div>' +
-        '<h1 class="bloom-title">' + (score >= 80 ? 'It’s a plan! 🌸' : 'Almost in bloom') + '</h1>' +
+        '<h1 class="bloom-title">' + (score >= 80 ? 'It’s a plan! 🌸' : score >= 50 ? 'Almost in bloom 🌷' : 'Still budding 🌱') + '</h1>' +
         '<p class="bloom-sub"><strong data-bloom-score>' + score + '%</strong> in bloom · ' +
           (score >= 80 ? 'Everyone’s on board.' : 'A few people are still deciding — you can lock it in anyway.') + '</p>' +
+        waitingHTML() +
       '</div>' +
       '<div><article class="plan-card" id="planCard" aria-labelledby="planTitle"></article>' +
         '<details class="tweak"><summary>Change the time or place</summary>' +
@@ -885,6 +962,13 @@
         '</details>' +
       '</div>' +
     '</section>';
+  }
+
+  function waitingHTML() {
+    const waiting = state.friends.filter((f) => !f.avail.size || Object.keys(f.votes).length < PLACES.length);
+    if (!waiting.length) return '';
+    return '<div class="waiting"><p>' + avatarStack(waiting) + ' Waiting on <strong>' + esc(namesList(waiting)) + '</strong></p>' +
+      (state.mode === 'live' ? '<button type="button" class="btn small ghost" id="nudgeBtn">💌 Copy a friendly nudge</button>' : '') + '</div>';
   }
 
   function weatherRow(run, pl) {
@@ -938,6 +1022,12 @@
 
   function bindBloom() {
     renderPlanCard();
+    const nudge = $('#nudgeBtn');
+    if (nudge) nudge.addEventListener('click', () => {
+      const waiting = state.friends.filter((f) => !f.avail.size || Object.keys(f.votes).length < PLACES.length);
+      copy('Hey ' + waiting.map((f) => f.name).join(' & ') + '! 🌸 We’re almost done planning “' + state.title + '” — tap to add your times and votes (takes 1 min): ' + inviteLink(),
+        'Nudge copied — paste it in the group chat');
+    });
     $$('input[name="run"]').forEach((r) => r.addEventListener('change', () => { state.pickRun = r.value; renderPlanCard(); announce('Time changed.'); }));
     $$('input[name="place"]').forEach((r) => r.addEventListener('change', () => { state.pickPlace = r.value; renderPlanCard(); announce('Place changed.'); }));
     // Let the flower open from a bud for the big reveal.
@@ -983,6 +1073,68 @@
     document.body.appendChild(layer);
     setTimeout(() => layer.remove(), 4500);
   }
+
+  // ---------- Milestones (small rewards keep momentum going) ----------
+  function checkMilestones() {
+    if (state.step === 'home' || state.step === 'join') return;
+    const m = state.milestones;
+    const best = computeRuns()[0];
+    if (!m.match && best && best.who.length >= 2 && best.who.includes(state.me)) {
+      m.match = true;
+      celebrate('✨ First match! ' + namesList(best.who.filter((p) => p !== state.me)) + ' can do ' + dayShort(best.d) + ' ' + fmtRange(best.start, best.end));
+    }
+    if (!m.all && best && total() > 1 && best.who.length === total()) {
+      m.all = true;
+      celebrate('🎉 Everyone’s free ' + dayLong(best.d) + ' ' + fmtRange(best.start, best.end) + '!');
+    }
+    const top = rankPlaces()[0];
+    if (!m.fav && top && top.yes.length >= Math.max(2, Math.ceil(total() * 0.6))) {
+      m.fav = true;
+      celebrate('🔥 ' + top.name + ' is the group favourite');
+    }
+  }
+  function celebrate(msg) {
+    toast(null, msg);
+    announce(msg);
+    buzz([12, 50, 12]);
+  }
+  function buzz(pattern) {
+    if (reduceMotion || !navigator.vibrate) return;
+    try { navigator.vibrate(pattern); } catch (e) { /* unsupported */ }
+  }
+
+  // ---------- Accessibility preferences ----------
+  const prefs = { big: false, counts: false, calm: false, contrast: false };
+  try { Object.assign(prefs, JSON.parse(store.get('bloom.prefs') || '{}')); } catch (e) { /* ignore */ }
+  function applyPrefs() {
+    const root = document.documentElement;
+    Object.keys(prefs).forEach((k) => root.classList.toggle('pref-' + k, !!prefs[k]));
+    reduceMotion = motionMQ.matches || prefs.calm;
+    $$('#a11yPanel input[data-pref]').forEach((i) => { i.checked = !!prefs[i.dataset.pref]; });
+    if (state.step === 'times') updateAllCells();
+  }
+  const a11yBtn = $('#a11yBtn'), a11yPanel = $('#a11yPanel');
+  function setA11yOpen(open) {
+    a11yPanel.hidden = !open;
+    a11yBtn.setAttribute('aria-expanded', String(open));
+    if (open) { const first = a11yPanel.querySelector('input'); if (first) first.focus(); }
+  }
+  a11yBtn.addEventListener('click', () => setA11yOpen(a11yPanel.hidden));
+  a11yPanel.addEventListener('change', (e) => {
+    const k = e.target.dataset.pref;
+    if (!k) return;
+    prefs[k] = e.target.checked;
+    store.set('bloom.prefs', JSON.stringify(prefs));
+    applyPrefs();
+    announce(e.target.closest('label').querySelector('strong').textContent + (e.target.checked ? ' on' : ' off'));
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !a11yPanel.hidden) { setA11yOpen(false); a11yBtn.focus(); }
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (!a11yPanel.hidden && !e.target.closest('.a11y-wrap')) setA11yOpen(false);
+  });
+  applyPrefs();
 
   // ---------- Utilities ----------
   function downloadICS(run, pl) {
@@ -1082,6 +1234,7 @@
     state.friends = [];
     state.me = { id: res.memberId, name: 'You', color: '#2F6FEB', avail: new Set(), votes: {}, joined: true };
     state.pickRun = state.pickPlace = null;
+    state.milestones = {};
     applyState(res.state, true);
     saveSession(res.groupId, Object.assign({}, state.session, { title: state.group.title }));
     startSync();
@@ -1097,6 +1250,8 @@
     state.friends = FRIENDS.map((f) => Object.assign({}, f, { avail: new Set(), votes: {}, joined: false }));
     state.sim = { times: false, votes: false };
     state.deckIndex = 0;
+    state.milestones = {};
+    state.coachDone = { grid: false, deck: false };
     state.pickRun = state.pickPlace = null;
   }
 

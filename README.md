@@ -11,10 +11,25 @@ Making plans with friends dies in the group chat: "when's everyone free?", "idk,
 3. **Bloom** — each person is a petal that opens as they add times and vote. When the group agrees, you get one clear plan card: when, where, who's coming — add it to your calendar or copy the invite to the group chat.
 
 ## Accessibility & inclusive design
-- Full keyboard support: roving-focus grid (arrow keys, Space to toggle, Shift+arrow to paint), ←/↑/→ to vote.
-- Screen-reader labels on every grid cell ("Saturday 3pm. You're free. 5 of 5 free: Maya, Jun, Priya, Sam"), live announcements when friends join or votes change.
-- Light and dark themes, respects `prefers-reduced-motion`, visible focus rings, colour is never the only signal (outline for "you", star for "best").
-- Responsive down to 375px phones; touch drag-to-paint and swipe.
+- **Accessibility menu** (♿ in the header): bigger text, numbers on the grid (so colour is never the only signal), calm mode (no animation/confetti), high contrast. Saved per device.
+- Full keyboard support: roving-focus grid (arrow keys, Space to toggle, Shift+arrow to paint), ←/↑/→ to vote, Esc closes menus.
+- Screen-reader labels on every grid cell ("Saturday 3pm. You're free. 5 of 5 free: Maya, Jun, Priya, Sam"), live announcements when friends join, milestones and votes.
+- 44px+ touch targets, visible focus rings, light/dark themes, respects `prefers-reduced-motion`, step-free access shown on every place card.
+- Responsive down to 375px phones with touch drag-to-paint and swipe.
+
+## Design decisions (the psychology behind it)
+| Principle | Where it shows up |
+|---|---|
+| **One clear next step** (Hick's law) | A sticky action bar on every screen holds exactly one primary button, placed in the thumb zone. |
+| **Show, don't tell** | A first-time coach mark shows a hand dragging down the grid; the first card wiggles to teach swiping. |
+| **Goal-gradient effect** | The bloom meter and "4 of 6 swiped — almost there!" make progress visible, so people finish. |
+| **Endowed progress** | Joining already opens your petal a little; a new group shows "🌱 just planted", not "0%". |
+| **Social proof** | "Maya and Jun love this" on each card; live toasts when friends join. |
+| **Low-stakes choices** | "Pass" is a calm grey instead of an alarming red ✕, "Love it" is the bright primary, and Undo is always one tap away. |
+| **Reward moments** | Milestones ("✨ First match!", "🎉 Everyone's free Saturday 3–6pm!"), haptics on phones, and confetti on the final plan. |
+| **Colour meaning** | Pink = social/primary action, gold = "best"/reward, green = done/success, grey = neutral. |
+| **Reassuring words** | "No sign-ups · Free · About 2 minutes", "You can change these anytime", "There are no wrong answers". |
+| **Gentle nudges** | The final screen lists who you're waiting on and copies a friendly reminder for the group chat. |
 
 ## Groups, invites & passwords
 1. Create a group with a title, your name and a **group password**.

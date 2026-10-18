@@ -28,6 +28,19 @@
       </ol>
     </nav>
 
+    <div class="a11y-wrap">
+      <button type="button" class="icon-btn" id="a11yBtn" aria-expanded="false" aria-controls="a11yPanel" aria-label="Accessibility settings">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="4.5" r="2" fill="currentColor"/><path d="M4 8.5l8 1.5 8-1.5M12 10v5m0 0l-3.5 6M12 15l3.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="a11y-panel" id="a11yPanel" role="group" aria-labelledby="a11yTitle" hidden>
+        <h2 id="a11yTitle">Make Bloom work for you</h2>
+        <label class="pref"><input type="checkbox" data-pref="big"><span><strong>Bigger text</strong><small>Everything 15% larger</small></span></label>
+        <label class="pref"><input type="checkbox" data-pref="counts"><span><strong>Numbers on the grid</strong><small>See how many are free without relying on colour</small></span></label>
+        <label class="pref"><input type="checkbox" data-pref="calm"><span><strong>Calm mode</strong><small>Turn off animations and confetti</small></span></label>
+        <label class="pref"><input type="checkbox" data-pref="contrast"><span><strong>High contrast</strong><small>Stronger text and borders</small></span></label>
+      </div>
+    </div>
+
     <button type="button" class="icon-btn" id="themeToggle" aria-label="Switch to dark theme">
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
     </button>
