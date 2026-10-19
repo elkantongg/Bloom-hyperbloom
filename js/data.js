@@ -39,12 +39,15 @@ export function customPlace(c) {
     photoUrl: g && d.photoRef ? '/api/places/photo?name=' + encodeURIComponent(d.photoRef) : ln && /^https:\/\//.test(d.image || '') ? d.image : '',
     photoCredit: g && d.photoRef ? 'Photo: ' + (d.photoBy || 'Google') + ' · Google' : ln && d.image ? 'Image: ' + (d.siteName || 'linked page') : '',
     photoCreditUrl: g && d.photoRef ? d.photoByUrl || d.mapsUrl || '' : ln ? d.website || '' : '',
-    link: d && d.source === 'manual' ? (d.area ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(d.area) : 'https://www.google.com/search?q=' + encodeURIComponent(activityName)) : d && d.mapsUrl ? d.mapsUrl : ln && /^https?:\/\//.test(d.website || '') ? d.website : '',
+    link: d && d.source === 'manual' ? (d.area ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(d.area) : 'https://www.google.com/search?q=' + encodeURIComponent(c.name)) : d && d.mapsUrl ? d.mapsUrl : ln && /^https?:\/\//.test(d.website || '') ? d.website : '',
     linkLabel: d && d.source === 'manual' ? (d.area ? 'Search venue in Google Maps' : 'Search on Google') : ln ? 'Open link' : d && d.mapsUrl ? 'Open in Google Maps' : '',
     map: d && typeof d.lat === 'number' && typeof d.lon === 'number' ? { lat: d.lat, lon: d.lon } : null,
     hoursToday: d ? (todaysHours(d.hours) || d.hoursText || '') : '',
-    website: d && d.source === 'manual' ? 'https://www.google.com/search?q=' + encodeURIComponent(activityName) : !ln && d && /^https?:\/\//.test(d.website || '') ? d.website : '',
-    blurb: d && d.source === 'manual' ? [d.address, d.description, 'Suggested by ' + by + '.'].filter(Boolean).join(' · ') : d && d.description ? d.description + ' · Suggested by ' + by + '.' : d && d.address && d.address !== d.area ? d.address + ' · Suggested by ' + by + '.' : d && d.address ? 'Suggested by ' + by + '.' : 'Suggested by ' + by + '. Tap the Google link to check hours, prices and reviews.',
+    // Quick link: the link they typed, otherwise a Google search of the exact card name.
+    website: d && d.source === 'manual' ? (/^https?:\/\//.test(d.website || '') ? d.website : 'https://www.google.com/search?q=' + encodeURIComponent(c.name)) : !ln && d && /^https?:\/\//.test(d.website || '') ? d.website : '',
+    blurb: d && d.source === 'manual' ? [d.address, d.description].filter(Boolean).join(' · ') : d && d.description ? d.description : d && d.address && d.address !== d.area ? d.address : d ? '' : 'Tap the Google link to check hours, prices and reviews.',
+    suggestedBy: 'Suggested by ' + by + '.',
+    baseName: activityName, // the name without " (venue)", used by the editor
     tags: d ? [d.stepFree && 'Step-free', d.rating && '⭐ ' + Number(d.rating).toFixed(1) + (d.reviews ? ' (' + Number(d.reviews).toLocaleString() + ')' : ''),
       d.openNow === true && 'Open now', d.reservable && 'Takes reservations'].filter(Boolean) : [],
     custom: true, addedBy: c.addedBy };

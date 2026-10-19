@@ -54,7 +54,8 @@ export function cardHTML(pl, depth) {
       '<span class="kind">' + esc(pl.kind) + '</span></div>' +
     '<div class="card-body"><h3 style="font-size:' + Math.max(18, 24 - Math.max(0, pl.name.length - 35) * 0.12) + 'px">' + esc(pl.name) + '</h3>' +
       (pl.price || pl.dist ? '<div class="meta">' + [pl.price, pl.dist].filter(Boolean).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') +
-      '<p class="blurb">' + esc(pl.blurb) + '</p>' +
+      (pl.blurb ? '<p class="blurb">' + esc(pl.blurb) + '</p>' : '') +
+      (pl.suggestedBy ? '<p class="by">' + esc(pl.suggestedBy) + '</p>' : '') +
       (pl.hoursToday ? '<p class="hours">🕒 Hours: ' + esc(pl.hoursToday) + '</p>' : '') +
 
       '<div class="meta-row">' +

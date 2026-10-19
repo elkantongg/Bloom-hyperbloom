@@ -57,6 +57,7 @@ STATIC = {
 COLORS = ["#2F6FEB", "#E03131", "#D9831A", "#7C5CFF", "#11966A", "#0E8E9C", "#B4469B", "#8A6D1F", "#C2410C", "#4F46E5", "#0F766E", "#BE185D"]
 KINDS = {"food", "drinks", "activity", "other"}
 MAX_CUSTOM_PLACES = 20
+MAX_PLACE_NAME = 80  # e.g. "Escape Room (Orchard Gateway)"
 MAX_MEMBERS = 12
 MAX_BODY = 16 * 1024
 SLOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}@\d{1,2}$")
@@ -591,7 +592,7 @@ def clean_details(d):
     def num(v, hi):
         return v if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= hi else None
     if d.get("source") == "manual":
-        out.update({"source": "manual", "name": s(d.get("name"), MAX_BODY), "area": s(d.get("area"), MAX_BODY), "description": s(d.get("description"), 200)})
+        out.update({"source": "manual", "name": s(d.get("name"), 80), "area": s(d.get("area"), 60), "description": s(d.get("description"), 200)})
     if d.get("source") == "link":
         out.update({"source": "link", "name": s(d.get("name"), 80), "description": s(d.get("description"), 200),
                     "siteName": s(d.get("siteName"), 60), "website": url(d.get("website")),
@@ -1035,7 +1036,7 @@ class Handler(BaseHTTPRequestHandler):
         if not rate_ok(self.client_address[0], "editplace", 30):
             raise ApiError(429, "Slow down a little — try again in a minute")
         body = self.read_body()
-        name = text(body, "name", 1, MAX_BODY)
+        name = text(body, "name", 1, MAX_PLACE_NAME)
         kind = body.get("kind")
         if kind not in KINDS:
             raise ApiError(400, "Pick a type: food, drinks, activity or something else")
@@ -1057,6 +1058,8 @@ class Handler(BaseHTTPRequestHandler):
                 details["category"] = s(e["category"], 60) or None
             if "price" in e:
                 details["price"] = e["price"] if e["price"] in ("Free", "$", "$$", "$$$", "$$$$") else None
+            if "area" in e:
+                details["area"] = s(e["area"], 60) or None
             if "address" in e:
                 details["address"] = s(e["address"], 200) or None
             if "hoursText" in e:
@@ -1079,7 +1082,7 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(429, "Slow down a little — try again in a minute")
         body = self.read_body()
         details = clean_details(body.get("details"))
-        name = text(body, "name", 1, MAX_BODY)
+        name = text(body, "name", 1, MAX_PLACE_NAME)
         kind = body.get("kind")
         if kind not in KINDS:
             raise ApiError(400, "Pick a type: food, drinks, activity, outdoors or other")

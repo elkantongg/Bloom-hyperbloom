@@ -37,9 +37,9 @@ export function searchHTML() {
     '<details class="gs-custom" id="gsCustom"><summary>Add a custom place or activity</summary>' +
       '<p class="hint">Missing a place or branch? Enter it here for your group to vote on.</p>' +
       '<form id="gsCustomForm" class="edit-form custom-form">' +
-        '<div class="field"><label for="customName">Name *</label><input id="customName" required placeholder="e.g. Yo Chi or pottery workshop"></div>' +
+        '<div class="field"><label for="customName">Name *</label><input id="customName" required maxlength="50" placeholder="e.g. Yo Chi or pottery workshop"></div>' +
         '<div class="field"><label for="customKind">Type</label><select id="customKind">' + Object.keys(KINDS).map((k) => '<option value="' + k + '">' + KINDS[k].label + '</option>').join('') + '</select></div>' +
-        '<div class="field"><label for="customVenue">Venue or branch (optional)</label><input id="customVenue" placeholder="e.g. mall name or studio"></div>' +
+        '<div class="field"><label for="customVenue">Venue or branch (optional)</label><input id="customVenue" maxlength="28" placeholder="e.g. mall name or studio"></div>' +
         '<div class="field"><label for="customPrice">Price</label><select id="customPrice"><option value="">Not sure</option><option>Free</option><option>$</option><option>$$</option><option>$$$</option></select></div>' +
         '<div class="field"><label for="customHours">Opening hours (optional)</label><input id="customHours" maxlength="120" placeholder="e.g. Weekdays 10am–8pm; weekends 11am–10pm"></div>' +
         '<div class="field"><label for="customNotes">Notes (optional)</label><textarea id="customNotes" maxlength="200" rows="2" placeholder="Booking details, meeting point or anything friends should know"></textarea></div>' +

@@ -967,3 +967,7 @@ kbd {
 @media (max-width: 600px) {
   .deck, .card[data-depth="0"] { min-height: 430px; }
 }
+
+/* Card: "Suggested by" on its own line; each link on its own line */
+.card-body .by { font-size: 13px; color: var(--muted); }
+.meta-row .g-link { flex-basis: 100%; }

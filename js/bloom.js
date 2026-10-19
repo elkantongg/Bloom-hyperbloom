@@ -115,7 +115,7 @@ export function renderPlanCard() {
       '<div class="plan-row"><span class="ico" aria-hidden="true">' + pl.emoji + '</span><div><div class="k">Where</div>' +
         '<div class="v">' + esc(pl.name) + '</div><div class="sub">' + esc([pl.kind, pl.price, pl.dist].concat(pl.tags).filter(Boolean).join(' · ')) +
         (pl.hoursToday ? '<br>🕒 Hours: ' + esc(pl.hoursToday) : '') +
-        (pl.website ? '<br><a href="' + esc(pl.website) + '" target="_blank" rel="noopener">Quick link ↗</a> · ' : ' · ') +
+        (pl.website ? '<br><a href="' + esc(pl.website) + '" target="_blank" rel="noopener">Quick link ↗</a>' : '') + '<br>' +
         '<a href="' + esc(googleLink(pl)) + '" target="_blank" rel="noopener">' + (pl.linkLabel || 'Look it up on Google') + ' ↗</a></div></div></div>' +
       weatherRow(run, pl) +
       '<div class="plan-row"><span class="ico" aria-hidden="true">👯</span><div><div class="k">Who’s coming · ' + run.who.length + ' of ' + total() + '</div>' +

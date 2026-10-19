@@ -8,7 +8,10 @@ import { announce, refresh, toast } from './ui.js';
 import { api, applyState } from './live.js';
 import { renderDeck, renderRanking } from './places.js';
 
-const PRICES = ['', 'Free', '$', '$$', '$$$', '$$$$'];
+// Same choices as the add form. Names stay short enough to fit a card.
+export const PRICES = ['', 'Free', '$', '$$', '$$$'];
+export const NAME_MAX = 50;
+export const VENUE_MAX = 28;
 
 export function canEdit(c) {
   if (!c) return false;
@@ -24,6 +27,10 @@ export function openEditor(id) {
   const c = state.custom.find((x) => x.id === id);
   if (!c || !canEdit(c)) return;
   const d = c.details || {};
+  const venue = d.area || '';
+  // The card name is "Name (Venue)"; edit the two parts separately, like when adding.
+  const suffix = venue ? ' (' + venue + ')' : '';
+  const base = suffix && c.name.endsWith(suffix) ? c.name.slice(0, -suffix.length) : c.name;
   let dlg = $('#editDialog');
   if (!dlg) {
     dlg = document.createElement('dialog');
@@ -32,21 +39,19 @@ export function openEditor(id) {
     document.body.appendChild(dlg);
   }
   const kind = c.kind === 'outdoors' ? 'activity' : c.kind;
+  // Same fields, labels and order as "Add a custom place or activity" (search.js).
   dlg.innerHTML =
     '<form method="dialog" class="edit-form" id="editForm" novalidate>' +
       '<h2>Edit idea</h2>' +
       '<p class="hint">Friends will see your changes on their card.</p>' +
-      field('edName', 'Name', '<input id="edName" required value="' + esc(c.name) + '">') +
-      '<div class="edit-two">' +
-        field('edKind', 'Type', '<select id="edKind">' + Object.keys(KINDS).map((k) =>
-          '<option value="' + k + '"' + (k === kind ? ' selected' : '') + '>' + KINDS[k].emoji + ' ' + KINDS[k].label + '</option>').join('') + '</select>') +
-        field('edPrice', 'Price', '<select id="edPrice">' + PRICES.map((p) =>
-          '<option value="' + p + '"' + ((d.price || '') === p ? ' selected' : '') + '>' + (p || 'Not sure') + '</option>').join('') + '</select>') +
-      '</div>' +
-      field('edCategory', 'What is it?', '<input id="edCategory" maxlength="60" placeholder="e.g. Laser tag arena" value="' + esc(d.category || '') + '">') +
-      field('edDesc', 'Notes', '<textarea id="edDesc" maxlength="200" rows="2" placeholder="e.g. Book 2 days ahead, groups of 6+">' + esc(d.description || '') + '</textarea>') +
-      field('edHours', 'Opening hours', '<input id="edHours" maxlength="120" placeholder="e.g. Weekdays 10am–8pm; weekends 11am–10pm" value="' + esc(d.hoursText || '') + '">') +
-      field('edLink', 'Quick link', '<input id="edLink" type="url" inputmode="url" maxlength="500" placeholder="Website, booking or Google Maps link" value="' + esc(d.website || '') + '">') +
+      field('edName', 'Name *', '<input id="edName" required maxlength="' + NAME_MAX + '" value="' + esc(base) + '">') +
+      field('edKind', 'Type', '<select id="edKind">' + Object.keys(KINDS).map((k) =>
+        '<option value="' + k + '"' + (k === kind ? ' selected' : '') + '>' + KINDS[k].label + '</option>').join('') + '</select>') +
+      field('edVenue', 'Venue or branch (optional)', '<input id="edVenue" maxlength="' + VENUE_MAX + '" placeholder="e.g. mall name or studio" value="' + esc(venue) + '">') +
+      field('edPrice', 'Price', '<select id="edPrice">' + PRICES.map((p) =>
+        '<option value="' + p + '"' + ((d.price || '') === p ? ' selected' : '') + '>' + (p || 'Not sure') + '</option>').join('') + '</select>') +
+      field('edHours', 'Opening hours (optional)', '<input id="edHours" maxlength="120" placeholder="e.g. Weekdays 10am–8pm; weekends 11am–10pm" value="' + esc(d.hoursText || '') + '">') +
+      field('edDesc', 'Notes (optional)', '<textarea id="edDesc" maxlength="200" rows="2" placeholder="Booking details, meeting point or anything friends should know">' + esc(d.description || '') + '</textarea>') +
       '<p class="form-error" id="edError" role="alert"></p>' +
       '<div class="edit-actions"><button type="submit" class="btn">Save changes</button>' +
         '<button type="button" class="btn ghost" id="edCancel">Cancel</button></div>' +
@@ -63,17 +68,16 @@ function field(id, label, control) {
 
 async function save(c, dlg) {
   const err = $('#edError');
-  const name = $('#edName').value.trim();
+  const base = $('#edName').value.trim();
+  const venue = $('#edVenue').value.trim();
   const kind = $('#edKind').value;
-  if (!name) { err.textContent = 'Give it a name.'; $('#edName').focus(); return; }
+  if (!base) { err.textContent = 'Give it a name.'; $('#edName').focus(); return; }
+  const name = venue ? base + ' (' + venue + ')' : base;
   const taken = state.custom.some((x) => x.id !== c.id && x.name.toLowerCase() === name.toLowerCase());
   if (taken) { err.textContent = '“' + name + '” is already in the deck.'; return; }
-  let link = $('#edLink').value.trim();
-  if (link && !/^https?:\/\//i.test(link)) link = 'https://' + link;
   const edits = {
-    category: $('#edCategory').value.trim(), price: $('#edPrice').value,
-    description: $('#edDesc').value.trim(),
-    hoursText: $('#edHours').value.trim(), website: link,
+    area: venue, price: $('#edPrice').value,
+    hoursText: $('#edHours').value.trim(), description: $('#edDesc').value.trim(),
   };
   if (state.mode === 'live') {
     try {
