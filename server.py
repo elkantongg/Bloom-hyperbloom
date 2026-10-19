@@ -5,6 +5,10 @@ Only uses Python's standard library, so there is nothing to install.
 Run:  python3 server.py   (or: npm start)
 """
 import hashlib
+import html
+import ipaddress
+import socket
+from html.parser import HTMLParser
 import hmac
 import json
 import os
@@ -172,36 +176,90 @@ def osm_kind(category, value):
     return "activity"
 
 
-def photon_autocomplete(text):
-    """Places matching what's typed so far (typo-tolerant), within Singapore."""
-    key = text.casefold()
-    hit = LOOKUP_CACHE.get(key)
-    if hit and time.time() - hit[0] < 3600:
-        return hit[1]
-    qs = urllib.parse.urlencode({"q": text, "limit": 12, "lang": "en", "bbox": SG_BBOX,
+# What counts as each type in the "Got another idea?" dropdown (OpenStreetMap tags).
+FOOD = {"amenity": {"restaurant", "fast_food", "food_court", "ice_cream"},
+        "shop": {"bakery", "deli", "pastry", "confectionery", "chocolate"}}
+DRINKS = {"amenity": {"cafe", "bar", "pub", "biergarten"},
+          "shop": {"tea", "coffee", "beverages", "alcohol", "wine"}}
+ACTIVITY_KEYS = {"leisure", "tourism", "natural", "craft", "sport", "historic", "place", "building"}
+ACTIVITY_AMENITY = {"cinema", "theatre", "arts_centre", "karaoke_box", "nightclub", "events_venue",
+                    "community_centre", "casino", "library", "planetarium", "studio", "spa"}
+ACTIVITY_SHOP = {"pottery", "craft", "art", "games", "books", "music", "massage", "beauty", "sports"}
+FILLER = {"class", "classes", "lesson", "lessons", "workshop", "workshops", "course", "courses",
+          "near", "me", "nearby", "place", "places", "the", "in", "singapore", "sg"}
+
+
+def tag_in(rules, key, value):
+    return value in rules.get(key, set())
+
+
+def matches_kind(key, value, kind):
+    if kind == "food":
+        return tag_in(FOOD, key, value)
+    if kind == "drinks":
+        return tag_in(DRINKS, key, value)
+    if kind == "activity":
+        return (key in ACTIVITY_KEYS or (key == "amenity" and value in ACTIVITY_AMENITY)
+                or (key == "shop" and value in ACTIVITY_SHOP))
+    return True  # "Something else": anything
+
+
+def nice_label(value):
+    return (value or "").replace("_", " ").capitalize() if value not in ("yes", "no") else ""
+
+
+def photon_query(text, kind):
+    qs = urllib.parse.urlencode({"q": text, "limit": 25, "lang": "en", "bbox": SG_BBOX,
                                  "lat": 1.3521, "lon": 103.8198})
     with urllib.request.urlopen(urllib.request.Request(PHOTON + "?" + qs, headers={"User-Agent": UA}), timeout=6) as r:
         features = json.loads(r.read()).get("features") or []
     out, seen = [], set()
     for f in features:
         p = f.get("properties") or {}
-        if not p.get("name") or p.get("osm_key") in SKIP_KEYS or not p.get("osm_id"):
+        key, value = p.get("osm_key"), p.get("osm_value")
+        if not p.get("name") or key in SKIP_KEYS or not p.get("osm_id") or not matches_kind(key, value, kind):
             continue
         street = " ".join(x for x in (p.get("housenumber"), p.get("street")) if x)
         area = p.get("district") or p.get("locality") or p.get("city")
-        secondary = ", ".join(x for x in (street, area) if x and x != p["name"])
-        dup = (p["name"].casefold(), secondary.casefold())
+        where = ", ".join(x for x in (street, area) if x and x != p["name"])
+        dup = (p["name"].casefold(), where.casefold())
         if dup in seen:
             continue
         seen.add(dup)
         out.append({"placeId": f"osm:{p.get('osm_type')}{p['osm_id']}", "main": p["name"],
-                    "secondary": secondary or (p.get("osm_value") or "").replace("_", " ").capitalize()})
+                    "category": nice_label(value), "secondary": where})
         if len(out) == 6:
             break
-    LOOKUP_CACHE[key] = (time.time(), out)
+    return out
+
+
+def photon_autocomplete(text, kind="other"):
+    """Places matching what's typed (typo-tolerant) of the chosen type, within Singapore.
+    If nothing matches, retry without filler words ("pottery class" -> "pottery"),
+    then with fewer words."""
+    key = (text.casefold(), kind)
+    hit = LOOKUP_CACHE.get(key)
+    if hit and time.time() - hit[0] < 3600:
+        return hit[1]
+    words = text.split()
+    tries = [text]
+    core = [w for w in words if w.casefold() not in FILLER]
+    if core and core != words:
+        tries.append(" ".join(core))
+    while len(core) > 1:
+        core = core[:-1]
+        tries.append(" ".join(core))
+    out, used = [], text
+    for t in dict.fromkeys(tries):
+        out = photon_query(t, kind)
+        if out:
+            used = t
+            break
+    result = {"results": out, "approximate": bool(out) and used != text, "used": used}
+    LOOKUP_CACHE[key] = (time.time(), result)
     if len(LOOKUP_CACHE) > 3000:
         LOOKUP_CACHE.pop(next(iter(LOOKUP_CACHE)))
-    return out
+    return result
 
 
 def osm_details(place_id):
@@ -248,6 +306,91 @@ def osm_details(place_id):
     return out
 
 
+# ---------- Link previews ("Can't find it? Add a link") ----------
+# Reads a page's title / image / description (Open Graph tags) to build a card.
+# Fetching URLs that strangers paste is risky, so: public http(s) hosts only (no
+# private or local addresses, checked on every redirect), small size and time limits,
+# HTML pages only, and a per-person rate limit.
+LINK_MAX_BYTES = 600_000
+
+
+def public_host(host):
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    return bool(infos) and all(ipaddress.ip_address(i[4][0].split("%")[0]).is_global for i in infos)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None  # we follow redirects ourselves so every hop gets checked
+
+
+class _Meta(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.meta, self.title, self._in_title = {}, "", False
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "meta":
+            k = (a.get("property") or a.get("name") or "").lower()
+            if k and a.get("content") and k not in self.meta:
+                self.meta[k] = a["content"]
+        elif tag == "title":
+            self._in_title = True
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            self._in_title = False
+
+    def handle_data(self, data):
+        if self._in_title and len(self.title) < 300:
+            self.title += data
+
+
+def link_preview(url):
+    opener = urllib.request.build_opener(_NoRedirect)
+    for _ in range(4):
+        u = urllib.parse.urlparse(url)
+        if u.scheme not in ("http", "https") or not u.hostname or not public_host(u.hostname):
+            raise ApiError(400, "That link can't be opened. Use a normal public website link.")
+        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html"})
+        try:
+            resp = opener.open(req, timeout=6)
+        except urllib.error.HTTPError as e:
+            if e.code in (301, 302, 303, 307, 308) and e.headers.get("Location"):
+                url = urllib.parse.urljoin(url, e.headers["Location"])
+                continue
+            raise ApiError(502, "That page didn't load. You can still add it with the link.")
+        with resp:
+            if "html" not in (resp.headers.get("Content-Type") or ""):
+                raise ApiError(400, "That link isn't a web page.")
+            body = resp.read(LINK_MAX_BYTES).decode(resp.headers.get_content_charset() or "utf-8", "replace")
+            final = resp.geturl()
+        break
+    else:
+        raise ApiError(400, "That link redirects too many times.")
+    parser = _Meta()
+    try:
+        parser.feed(body)
+    except Exception:
+        pass
+    m = parser.meta
+    clean = lambda t, n: html.unescape(" ".join((t or "").split()))[:n] or None
+    image = m.get("og:image") or m.get("og:image:url") or m.get("twitter:image")
+    image = urllib.parse.urljoin(final, image) if image else None
+    return {
+        "source": "link",
+        "name": clean(m.get("og:title") or m.get("twitter:title") or parser.title, 80) or urllib.parse.urlparse(final).hostname,
+        "description": clean(m.get("og:description") or m.get("description") or m.get("twitter:description"), 200),
+        "siteName": clean(m.get("og:site_name"), 60) or urllib.parse.urlparse(final).hostname,
+        "image": image if image and image.startswith("https://") else None,
+        "website": final,
+    }
+
+
 # ---------- Google Places (optional, needs GOOGLE_PLACES_API_KEY in .env) ----------
 # Works like a mini Google Maps: autocomplete (with typo correction), then the
 # exact place's details and photo. The key never leaves the server.
@@ -280,10 +423,14 @@ def google(path, body=None, fields=None, params=None):
         return json.loads(r.read() or b"{}")
 
 
-def google_autocomplete(text, session):
+GOOGLE_TYPES = {"food": ["restaurant", "bakery", "meal_takeaway", "food_court"], "drinks": ["cafe", "bar", "coffee_shop"]}
+
+
+def google_autocomplete(text, session, kind="other"):
     data = google("/places:autocomplete", {
         "input": text, "includedRegionCodes": [REGION], "languageCode": "en",
         "locationBias": GOOGLE_BIAS, **({"sessionToken": session} if session else {}),
+        **({"includedPrimaryTypes": GOOGLE_TYPES[kind]} if kind in GOOGLE_TYPES else {}),
     })
     out = []
     for s_ in data.get("suggestions") or []:
@@ -377,6 +524,10 @@ def clean_details(d):
         return v if isinstance(v, bool) else None
     def num(v, hi):
         return v if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= hi else None
+    if d.get("source") == "link":
+        out.update({"source": "link", "name": s(d.get("name"), 80), "description": s(d.get("description"), 200),
+                    "siteName": s(d.get("siteName"), 60), "website": url(d.get("website")),
+                    "image": d.get("image")[:500] if isinstance(d.get("image"), str) and re.match(r"https://[^\s\"'<>]+$", d["image"]) else None})
     if d.get("source") == "osm":
         out.update({"source": "osm", "name": s(d.get("name"), 80), "mapsUrl": url(d.get("mapsUrl")),
                     "stepFree": b(d.get("stepFree")),
@@ -520,19 +671,34 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "GET" or (len(args) > 1 and str(args[1])[:1] in "45"):
             super().log_message(fmt, *args)
 
+    # Sent with every response: no embedding in other sites, no MIME sniffing, limited
+    # referrer info, and a content policy that only allows our own scripts.
+    CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+           "font-src https://fonts.gstatic.com; img-src 'self' data: https:; "
+           "connect-src 'self' https://api.open-meteo.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Content-Security-Policy", self.CSP)
+        super().end_headers()
+
     def send_json(self, status, payload):
         data = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(data)
 
     def read_body(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        if length > MAX_BODY:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ApiError(400, "Bad request")
+        if length < 0 or length > MAX_BODY:
             raise ApiError(413, "Request too large")
         if not length:
             return {}
@@ -562,6 +728,8 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         q = parse_qs(parsed.query)
         arg = lambda k: q.get(k, [""])[0]
+        if path == "/api/link-preview":
+            return self.link_route(arg("url"))
         if path == "/api/config":
             return self.send_json(200, {"placeSearch": "google" if GOOGLE_KEY else "free"})
         if path in ("/api/places/autocomplete", "/api/places/details", "/api/places/photo"):
@@ -580,7 +748,6 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-cache")
-        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(data)
 
@@ -625,6 +792,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": "Something went wrong on the server"})
 
     def create_group(self):
+        if not rate_ok(self.client_address[0], "create", 20):
+            raise ApiError(429, "You've created a lot of groups just now — try again in a minute")
         body = self.read_body()
         title = text(body, "title", 1, 40)
         name = text(body, "name", 1, 20)
@@ -715,6 +884,21 @@ class Handler(BaseHTTPRequestHandler):
             payload = group_state(gid, member_id)
         self.send_json(200, payload)
 
+    def link_route(self, url):
+        url = (url or "").strip()[:500]
+        if not url:
+            return self.send_json(400, {"error": "Paste a link first"})
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        if not rate_ok(self.client_address[0], "link", 10):
+            return self.send_json(429, {"error": "Too many links — try again in a minute"})
+        try:
+            self.send_json(200, {"place": link_preview(url)})
+        except ApiError as e:
+            self.send_json(e.status, {"error": e.message})
+        except (urllib.error.URLError, ValueError, TimeoutError, OSError, UnicodeError):
+            self.send_json(502, {"error": "That page didn't load. You can still add it with the link."})
+
     def places_route(self, which, arg):
         """Place search: Google Places if a key is set, otherwise free (Photon + OpenStreetMap)."""
         ip = self.client_address[0]
@@ -728,7 +912,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(200, {"results": []})
                 if not rate_ok(ip, "ac", 120):
                     return self.send_json(429, {"error": "Too many searches — try again in a minute"})
-                return self.send_json(200, {"results": google_autocomplete(text, session)})
+                kind = arg("kind") if arg("kind") in KINDS else "other"
+                return self.send_json(200, {"results": google_autocomplete(text, session, kind)})
             if which == "details":
                 pid = arg("id")
                 if not PLACE_ID.fullmatch(pid or ""):
@@ -761,7 +946,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(200, {"results": []})
                 if not rate_ok(ip, "ac", 120):
                     return self.send_json(429, {"error": "Too many searches — try again in a minute"})
-                return self.send_json(200, {"results": photon_autocomplete(text)})
+                kind = arg("kind") if arg("kind") in KINDS else "other"
+                return self.send_json(200, photon_autocomplete(text, kind))
             if which == "details":
                 if not OSM_ID.fullmatch(arg("id") or ""):
                     return self.send_json(400, {"error": "Unknown place"})
@@ -775,6 +961,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(502, {"error": "Search isn’t reachable right now — you can still add it as typed"})
 
     def add_place(self, gid):
+        if not rate_ok(self.client_address[0], "addplace", 30):
+            raise ApiError(429, "Slow down a little — try again in a minute")
         body = self.read_body()
         details = clean_details(body.get("details"))
         name = text(body, "name", 1, 40)

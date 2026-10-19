@@ -1,6 +1,6 @@
 // Step 1: painting free hours on the week grid.
 import { $, $$, esc, reduceMotion } from './util.js';
-import { dayLong, DAYS, dayShort, fmtHour, fmtRange, HOURS, key } from './dates.js';
+import { dayLong, DAYS, dayShort, fmtHour, fmtRange, HOURS, isPast, key, weekOver } from './dates.js';
 import { state, total } from './state.js';
 import { computeRuns, freeAt } from './derive.js';
 import { announce, avatarStack, buzz, copy, refresh, sidebarHTML, toast } from './ui.js';
@@ -26,6 +26,7 @@ export function timesHTML() {
   grid += '</div>';
 
   return '<div class="page-top"><div class="page-head"><h1>When are you free?</h1>' +
+      (weekOver() ? '<p class="week-over" role="status">⏰ This plan’s week is over. <a href="#/" class="link-btn">Start a new plan</a> to pick new dates.</p>' : '') +
       '<p id="gridHelp" class="one-line">Drag across the hours that work for you. The brighter a square, the more friends are free. ' +
       '<span class="sr-only">Keyboard: arrow keys move, Space or Enter toggles an hour, Shift plus an arrow paints as you move.</span></p></div>' +
     (state.mode === 'live'
@@ -71,6 +72,9 @@ export function updateCell(el) {
   const di = +el.dataset.d, h = +el.dataset.h;
   const k = key(di, h);
   const n = freeAt(di, h).length;
+  const past = isPast(di, h);
+  el.classList.toggle('past', past);
+  el.setAttribute('aria-disabled', String(past));
   el.style.setProperty('--heat', (n / total()).toFixed(3));
   const mine = state.me.avail.has(k);
   el.classList.toggle('mine', mine);
@@ -139,6 +143,7 @@ export function bindTimes() {
   };
   const paintOne = (el) => {
     if (!el) return;
+    if (isPast(+el.dataset.d, +el.dataset.h)) return; // can't plan for hours that are over
     const k = key(+el.dataset.d, +el.dataset.h);
     if (state.me.avail.has(k) === paintVal) return;
     setMine(k, paintVal);
@@ -187,6 +192,7 @@ export function bindTimes() {
     } else if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
       dismissCoach();
+      if (isPast(di, h)) { announce(dayLong(di) + ' ' + fmtHour(h) + ' has already passed.'); return; }
       const k = key(di, h);
       setMine(k, !state.me.avail.has(k));
       afterMineChanged();
@@ -201,6 +207,7 @@ export function bindTimes() {
     DAYS.forEach((d, di) => {
       const dow = d.getDay();
       HOURS.forEach((h) => {
+        if (isPast(di, h)) return;
         if (mode === 'evenings' && h >= 18) setMine(key(di, h), true);
         if (mode === 'weekend' && (dow === 0 || dow === 6) && h >= 12) setMine(key(di, h), true);
       });

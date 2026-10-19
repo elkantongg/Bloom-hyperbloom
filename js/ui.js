@@ -171,11 +171,19 @@ export function buzz(pattern) {
   try { navigator.vibrate(pattern); } catch (e) { /* unsupported */ }
 }
 
+// Copy text, and only say "copied" if it really was. If the browser blocks the
+// clipboard, show the text so the person can copy it themselves.
 export function copy(text, msg) {
   const done = () => { toast(null, msg); announce(msg); };
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done, done);
-  } else {
-    done();
-  }
+  const fallback = () => {
+    const t = document.createElement('textarea');
+    t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    t.remove();
+    if (ok) done(); else window.prompt('Copy this:', text);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+  else fallback();
 }

@@ -133,22 +133,36 @@ export async function flushSave() {
 
 // Poll every 3s while the tab is visible; pause when hidden to save battery/CPU.
 export let syncTimer = null;
+// Check for friends' changes every 3s while the tab is visible. If the server can't be
+// reached, wait longer between tries (up to 30s) instead of hammering it, and say so once.
+let failures = 0;
 export async function pull() {
   if (state.mode !== 'live' || !state.group || document.hidden) return;
   try {
     const data = await api('GET', '/groups/' + encodeURIComponent(state.group.id) + '/state');
+    if (failures >= 2) toast(null, '🟢 Back online');
+    failures = 0;
     applyState(data, false);
     refresh();
   } catch (e) {
-    if (e.status === 401 || e.status === 404) { stopSync(); toast(null, e.message); }
+    if (e.status === 401 || e.status === 404) { stopSync(); toast(null, e.message); return; }
+    failures++;
+    if (failures === 2) toast(null, 'Connection lost — retrying…');
   }
 }
+let syncGen = 0; // bumps on every start/stop so an old loop can't keep running
 export function startSync() {
   stopSync();
-  syncTimer = setInterval(pull, 3000);
+  const gen = syncGen;
+  const tick = async () => {
+    await pull();
+    if (gen === syncGen) syncTimer = setTimeout(tick, failures ? Math.min(30000, 3000 * 2 ** failures) : 3000);
+  };
+  syncTimer = setTimeout(tick, 3000);
 }
 export function stopSync() {
-  clearInterval(syncTimer);
+  syncGen++;
+  clearTimeout(syncTimer);
   syncTimer = null;
 }
 export function initLive() {

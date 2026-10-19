@@ -240,7 +240,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 96px; }
 @keyframes drift1 { 0%, 100% { transform: translate(0, -26px); } 45%, 60% { transform: translate(0, 0); } }
 @keyframes drift2 { 0%, 100% { transform: translate(-24px, 16px); } 45%, 60% { transform: translate(0, 0); } }
 @keyframes drift3 { 0%, 100% { transform: translate(24px, 16px); } 45%, 60% { transform: translate(0, 0); } }
-@keyframes spark { 0%, 30%, 100% { transform: scale(.4) rotate(0deg); opacity: .5; } 50% { transform: scale(1.15) rotate(45deg); opacity: 1; } }
+@keyframes spark { 0%, 30% { transform: scale(.4) rotate(0deg); opacity: .5; } 50% { transform: scale(1.15) rotate(90deg); opacity: 1; } 70%, 100% { transform: scale(.4) rotate(180deg); opacity: .5; } }
 @keyframes glow { 0%, 30%, 100% { opacity: 0; } 50% { opacity: 1; } }
 
 .wx { font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 10px; background: var(--surface-2); }
@@ -902,3 +902,22 @@ kbd {
 .gs-info strong { font-size: 16px; color: var(--ink); }
 .gs-actions { display: flex; gap: 8px; padding: 10px 14px 14px; }
 .gs-preview .empty, .gs-preview .form-error { padding: 12px 14px; }
+
+/* Search: type dropdown + box side by side, link option, notes */
+.gs-row { display: flex; gap: 8px; align-items: stretch; }
+.gs-row select { flex: 0 0 auto; min-height: 48px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); padding: 0 10px; }
+.gs-row .gs-box { flex: 1; min-width: 0; }
+.gs-list .gs-note { cursor: default; font-size: 12px; color: var(--muted); min-height: 0; padding: 8px 10px; }
+.gs-link { margin-top: 12px; }
+.gs-link summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--accent); padding: 4px 0; }
+.gs-link form { margin-top: 8px; }
+.gs-link input { flex: 1; min-width: 0; min-height: 44px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); padding: 0 12px; }
+.gs-link input:focus-visible, .gs-row select:focus-visible { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 30%, transparent); }
+@media (max-width: 600px) { .gs-row { flex-wrap: wrap; } .gs-row select { flex: 1 1 100%; } }
+
+/* Hours that are already over can't be painted */
+.cell.past { opacity: .35; cursor: not-allowed; background-image: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--ink) 10%, transparent) 6px 7px); }
+.week-over { margin-top: 12px; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--gold) 22%, var(--surface)); font-weight: 600; }
+
+.gs-name-label { font-size: 12px; font-weight: 700; color: var(--muted); }
+.gs-info #gsName { min-height: 40px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 10px; font-weight: 700; font-size: 15px; }

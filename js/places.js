@@ -25,20 +25,7 @@ export function placesHTML() {
         '<p class="kbd-hint">Keyboard: <kbd>←</kbd> pass · <kbd>↑</kbd> maybe · <kbd>→</kbd> love it</p>' +
       '</div>' +
       '<div class="places-side">' +
-      (state.googlePlaces ? searchHTML() :
-      '<form class="panel suggest" id="suggestForm" novalidate>' +
-        '<h2 class="sub-title">Got another idea?</h2>' +
-        '<p class="suggest-sub">Add it to everyone’s deck. Pick the type first — we’ll ask you to confirm the exact place. Add an area for a specific branch, like “Din Tai Fung Tampines”.</p>' +
-        '<div class="suggest-row">' +
-          '<label class="sr-only" for="sgName">Place or idea</label>' +
-          '<input id="sgName" maxlength="40" placeholder="e.g. Din Tai Fung Tampines" autocomplete="off">' +
-          '<label class="sr-only" for="sgKind">Type</label>' +
-          '<select id="sgKind">' + Object.keys(KINDS).map((k) => '<option value="' + k + '">' + KINDS[k].emoji + ' ' + KINDS[k].label + '</option>').join('') + '</select>' +
-          '<button type="submit" class="btn small">＋ Add</button>' +
-        '</div>' +
-        '<p class="form-error" id="sgError" role="alert"></p>' +
-        '<div class="picker" id="sgPicker" hidden></div>' +
-      '</form>') +
+      searchHTML() +
       '<div class="panel"><h2 class="sub-title">Group favourites</h2>' +
         '<ol class="rank-list" id="rankList" aria-live="polite"></ol>' +
       '</div>' +
@@ -72,7 +59,7 @@ export function cardHTML(pl, depth) {
       '<div class="meta-row">' +
         (pl.tags.length ? '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' : '') +
         (pl.website ? '<a class="g-link" href="' + esc(pl.website) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Website &amp; tickets <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' : '') +
-        '<a class="g-link" href="' + googleLink(pl) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>' + (pl.link ? 'Open in Google Maps' : 'Look it up on Google') + ' <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
+        '<a class="g-link" href="' + esc(googleLink(pl)) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>' + (pl.linkLabel || 'Look it up on Google') + ' <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
       '</div>' +
       (pl.outdoor ? '<div class="wx" data-wx hidden></div>' : '') +
       '<div class="card-friends" data-friends="' + pl.id + '"></div>' +
@@ -215,66 +202,13 @@ export function undoVote() {
 
 // Look the idea up, then ALWAYS ask the person to confirm which place they mean
 // (e.g. which Din Tai Fung branch), so nothing wrong sneaks into the deck.
-export async function addSuggestion(e) {
-  e.preventDefault();
-  const input = $('#sgName'), err = $('#sgError');
-  const name = input.value.trim(), kind = $('#sgKind').value;
-  err.textContent = '';
-  hidePicker();
-  if (!name) { err.textContent = 'Type a place or idea first.'; input.focus(); return; }
-  if (allPlaces().some((p) => p.name.toLowerCase() === name.toLowerCase())) { err.textContent = '“' + name + '” is already in the deck.'; return; }
-  const btn = $('#suggestForm button[type="submit"]');
-  btn.disabled = true; btn.textContent = 'Searching…';
-  let found = null, approx = false;
-  try {
-    const res = await fetch('/api/lookup?q=' + encodeURIComponent(name) + '&kind=' + encodeURIComponent(kind));
-    if (res.ok) { const data = await res.json(); found = data.results || []; approx = !!data.approximate; }
-  } catch (ex) { /* no server (static hosting): skip straight to adding */ }
-  btn.disabled = false; btn.textContent = '＋ Add';
-  if (found === null) return saveSuggestion(name, kind, null);
-  showPicker(name, kind, found, approx);
-}
-
-export function showPicker(name, kind, found, approx) {
-  const box = $('#sgPicker');
-  const type = (KINDS[kind] || KINDS.other).label.toLowerCase();
-  const missingNote = 'Our map doesn’t list every shop — especially ones inside malls. Add it anyway and the Google link on the card will find it.';
-  const title = !found.length ? 'We couldn’t find “' + esc(name) + '” on our map'
-    : approx ? 'No exact match — closest ' + esc(type) + ' places on the map'
-    : found.length === 1 ? 'Is this the one?' : 'Which one did you mean?';
-  box.innerHTML = '<p class="pick-title">' + title + '</p>' +
-    (!found.length || approx ? '<p class="pick-hint">' + missingNote + '</p>' : '') +
-    '<ul' + (approx ? ' class="approx"' : '') + '>' + found.map((r, i) => '<li><button type="button" class="pick" data-i="' + i + '">' +
-      '<strong>' + esc(r.name || name) + (r.area ? ' · ' + esc(r.area) : '') + '</strong>' +
-      '<span>' + esc([r.category, r.price, r.address].filter(Boolean).join(' · ')) + '</span></button></li>').join('') +
-    '<li><button type="button" class="pick plain" data-i="-1"><strong>' + (found.length && !approx ? 'None of these' : 'Add it anyway') + '</strong>' +
-      '<span>Add “' + esc(name) + '” as typed</span></button></li></ul>';
-  box.hidden = false;
-  box.onclick = (ev) => {
-    const b = ev.target.closest('.pick');
-    if (!b) return;
-    const i = +b.dataset.i;
-    hidePicker();
-    saveSuggestion(name, kind, i >= 0 ? found[i] : null);
-  };
-  const first = box.querySelector('.pick');
-  if (first) first.focus();
-  announce(found.length ? found.length + ' matches for ' + name + '. Pick one.' : 'No matches. You can add it as typed.');
-}
-export function hidePicker() {
-  const box = $('#sgPicker');
-  if (box) { box.hidden = true; box.innerHTML = ''; }
-}
-
-// `google` = full details of a place picked in the Google search (search.js).
-export async function saveSuggestion(name, kind, match, google) {
+// Add a place to the deck. `details` = what the search or link preview found (or null for "as typed").
+export async function saveSuggestion(name, kind, _unused, details) {
   const err = $('#sgError');
-  let label = google ? name : match ? (match.name || name) + (match.area ? ' (' + match.area + ')' : '') : name;
+  let label = (name || '').trim();
+  if (!label) { if (err) err.textContent = 'Type a place or idea first.'; return; }
   if (label.length > 40) label = label.slice(0, 39) + '…';
   if (allPlaces().some((p) => p.name.toLowerCase() === label.toLowerCase())) { if (err) err.textContent = '“' + label + '” is already in the deck.'; return; }
-  const details = google ? google : match ? { area: match.area, address: match.address, category: match.category, price: match.price,
-    hours: match.hours, hoursText: match.hoursText, website: match.website, phone: match.phone,
-    photo: match.photo, lat: match.lat, lon: match.lon } : null;
   if (state.mode === 'live') {
     try {
       const data = await api('POST', '/groups/' + encodeURIComponent(state.group.id) + '/places', { name: label, kind: kind, details: details });
@@ -330,8 +264,7 @@ export function bindPlaces() {
   });
   $('#toBloom').addEventListener('click', () => go('bloom'));
   $('#undoVote').addEventListener('click', undoVote);
-  if (state.googlePlaces) bindSearch();
-  else $('#suggestForm').addEventListener('submit', addSuggestion);
+  bindSearch();
   simulateTimes(); // in case someone jumps straight here
   simulateVotes();
 }

@@ -1,5 +1,5 @@
 // Calculations from state: best times, place rankings, bloom score.
-import { DAYS, HOURS, key } from './dates.js';
+import { DAYS, HOURS, isPast, key } from './dates.js';
 import { allPlaces, votedCount } from './data.js';
 import { people, state, total } from './state.js';
 
@@ -27,7 +27,7 @@ export function computeRunsFresh() {
   DAYS.forEach((_, di) => {
     let cur = null;
     HOURS.forEach((h) => {
-      const who = freeAt(di, h);
+      const who = isPast(di, h) ? [] : freeAt(di, h); // past hours can't be planned
       const sig = who.map((p) => p.id).join(',');
       if (who.length && cur && cur.sig === sig && cur.end === h) {
         cur.end = h + 1;

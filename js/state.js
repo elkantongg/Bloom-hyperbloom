@@ -11,7 +11,6 @@ export const FRIENDS = [
 export const state = {
   step: 'home',
   mode: 'demo',        // 'demo' (simulated friends) or 'live' (real group on the server)
-  googlePlaces: false, // true when the server has a Google Places key (Maps-style search + real photos)
   group: null,         // { id, title, host, startDate } in live mode
   session: null,       // { memberId, token } in live mode
   joinId: null,        // group id from an invite link

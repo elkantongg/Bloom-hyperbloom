@@ -16,6 +16,13 @@ export const relDay = (di) => {
   const t = new Date(); t.setHours(0, 0, 0, 0);
   return Math.round((DAYS[di] - t) / 86400000);
 };
+// An hour slot is in the past once it has ended (e.g. the 3pm slot after 4pm today).
+export const isPast = (di, h) => {
+  const end = new Date(DAYS[di]); end.setHours(h + 1, 0, 0, 0);
+  return end <= new Date();
+};
+// The whole planning week is over.
+export const weekOver = () => isPast(DAYS.length - 1, HOURS[HOURS.length - 1]);
 export const fmtHour = (h) => (h % 12 || 12) + (h < 12 || h === 24 ? 'am' : 'pm');
 export const fmtRange = (a, b) => {
   const sameHalf = (a < 12) === (b < 12 || b === 24);
