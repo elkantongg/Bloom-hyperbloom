@@ -1,7 +1,7 @@
 // Shared UI pieces: toasts, avatars, the flower, the side panel, milestones.
 import { $, $$, esc, reduceMotion } from './util.js';
 import { dayLong, dayShort, fmtRange } from './dates.js';
-import { allPlaces } from './data.js';
+import { allPlaces, votedCount } from './data.js';
 import { people, state, total } from './state.js';
 import { bloomScore, computeRuns, personProgress, rankPlaces } from './derive.js';
 import { updateStepper } from './router.js';
@@ -103,7 +103,7 @@ export function sidebarHTML() {
 }
 export function statusOf(p) {
   if (!p.joined) return 'Invite sent';
-  const v = Object.keys(p.votes).length;
+  const v = votedCount(p);
   if (v >= allPlaces().length) return 'All done ✓';
   if (v > 0) return 'Voted ' + v + ' of ' + allPlaces().length;
   if (p.avail.size) return 'Added ' + p.avail.size + ' free hours';

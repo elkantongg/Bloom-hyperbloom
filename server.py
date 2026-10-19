@@ -51,7 +51,6 @@ STATIC = {
 }
 
 COLORS = ["#2F6FEB", "#E03131", "#D9831A", "#7C5CFF", "#11966A", "#0E8E9C", "#B4469B", "#8A6D1F", "#C2410C", "#4F46E5", "#0F766E", "#BE185D"]
-PLACE_IDS = {"noodle", "bowling", "picnic", "escape", "karaoke", "cafe"}  # built-in suggestions
 KINDS = {"food", "drinks", "activity", "other"}
 MAX_CUSTOM_PLACES = 20
 MAX_MEMBERS = 12
@@ -511,7 +510,8 @@ class Handler(BaseHTTPRequestHandler):
         with DB_LOCK:
             member_id = self.auth(gid)
             if votes is not None:
-                allowed = PLACE_IDS | {r[0] for r in DB.execute("SELECT id FROM places WHERE group_id=?", (gid,))}
+                # Real groups only vote on places their members suggested.
+                allowed = {r[0] for r in DB.execute("SELECT id FROM places WHERE group_id=?", (gid,))}
                 if not set(votes) <= allowed:
                     raise ApiError(400, "Invalid votes")
             if avail is not None:

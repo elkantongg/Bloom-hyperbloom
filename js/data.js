@@ -35,7 +35,18 @@ export function todaysHours(lines) {
   return (lines[(new Date().getDay() + 6) % 7] || '').replace(/^[^:]+:\s*/, '');
 }
 // Everything in the deck: built-in ideas first, then the group's own suggestions.
-export function allPlaces() { return PLACES.concat(state.custom.map(customPlace)); }
+// Demo mode starts with sample ideas. Real groups start empty and build the
+// deck from their own suggestions, so nothing made-up reaches real friends.
+export function allPlaces() {
+  const own = state.custom.map(customPlace);
+  return state.mode === 'demo' ? PLACES.concat(own) : own;
+}
+// Votes only count for places that are in the deck right now.
+export function votedCount(p) { return allPlaces().filter((pl) => pl.id in p.votes).length; }
+export function currentVotes(p) {
+  const ids = new Set(allPlaces().map((pl) => pl.id));
+  return Object.fromEntries(Object.entries(p.votes).filter(([id]) => ids.has(id)));
+}
 export const googleLink = (pl) => 'https://www.google.com/search?q=' + encodeURIComponent(pl.q || pl.name);
 
 export const FRIEND_VOTES = {

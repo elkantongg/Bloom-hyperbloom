@@ -1,7 +1,7 @@
 // Step 3: the final plan card, calendar file and nudges.
 import { $, $$, esc, reduceMotion, store } from './util.js';
 import { dateLong, DAYS, dayShort, fmtHour, fmtRange, setWeek } from './dates.js';
-import { allPlaces, googleLink } from './data.js';
+import { allPlaces, googleLink, votedCount } from './data.js';
 import { FRIENDS, people, state, total } from './state.js';
 import { bloomScore, chosenPlace, chosenRun, computeRuns, rankPlaces } from './derive.js';
 import { announce, avatar, avatarStack, copy, displayName, flowerSVG, namesList, toast, updateFlowers } from './ui.js';
@@ -57,7 +57,7 @@ export function renderWaiting() {
   if (box.innerHTML !== html) box.innerHTML = html;
 }
 export function waitingHTML() {
-  const waiting = state.friends.filter((f) => !f.avail.size || Object.keys(f.votes).length < allPlaces().length);
+  const waiting = state.friends.filter((f) => !f.avail.size || votedCount(f) < allPlaces().length);
   if (!waiting.length) return '';
   return '<div class="waiting"><p>' + avatarStack(waiting) + ' Waiting on <strong>' + esc(namesList(waiting)) + '</strong></p>' +
     (state.mode === 'live' ? '<button type="button" class="btn small ghost" id="nudgeBtn">💌 Copy a friendly nudge</button>' : '') + '</div>';
@@ -128,7 +128,7 @@ export function bindBloom() {
   renderPlanCard();
   $('#waitingBox').addEventListener('click', (e) => {
     if (!e.target.closest('#nudgeBtn')) return;
-    const waiting = state.friends.filter((f) => !f.avail.size || Object.keys(f.votes).length < allPlaces().length);
+    const waiting = state.friends.filter((f) => !f.avail.size || votedCount(f) < allPlaces().length);
     copy('Hey ' + waiting.map((f) => f.name).join(' & ') + '! 🌸 We’re almost done planning “' + state.title + '” — tap to add your times and votes (takes 1 min): ' + inviteLink(),
       'Nudge copied — paste it in the group chat');
   });

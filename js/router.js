@@ -13,7 +13,7 @@ export function canGo(step) {
   if (step === 'home' || step === 'join') return true;
   if (step === 'times') return state.mode === 'demo' || !!state.session;
   if (step === 'places') return state.me.avail.size > 0;
-  if (step === 'bloom') return state.deckIndex >= allPlaces().length;
+  if (step === 'bloom') return allPlaces().length > 0 && state.deckIndex >= allPlaces().length;
   return false;
 }
 export function go(step, push) {

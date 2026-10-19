@@ -1,6 +1,6 @@
 // Calculations from state: best times, place rankings, bloom score.
 import { DAYS, HOURS, key } from './dates.js';
-import { allPlaces } from './data.js';
+import { allPlaces, votedCount } from './data.js';
 import { people, state, total } from './state.js';
 
 export function freeAt(di, h) {
@@ -65,7 +65,8 @@ export function rankPlacesFresh() {
 
 export function personProgress(p) {
   if (!p.joined) return 0;
-  const voted = Object.keys(p.votes).length / allPlaces().length;
+  const n = allPlaces().length;
+  const voted = n ? votedCount(p) / n : 0;
   return 0.2 + (p.avail.size ? 0.4 : 0) + 0.4 * voted;
 }
 

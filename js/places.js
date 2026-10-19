@@ -1,6 +1,6 @@
 // Step 2: swiping on places and suggesting new ones.
 import { $, $$, esc, reduceMotion } from './util.js';
-import { allPlaces, FRIEND_VOTES, googleLink, KINDS, PLACES } from './data.js';
+import { allPlaces, currentVotes, FRIEND_VOTES, googleLink, KINDS, PLACES, votedCount } from './data.js';
 import { people, state, total } from './state.js';
 import { rankPlaces } from './derive.js';
 import { announce, avatarStack, buzz, namesList, refresh, sidebarHTML, toast } from './ui.js';
@@ -75,7 +75,9 @@ export function renderDeck() {
   const rest = allPlaces().slice(state.deckIndex);
   $$('#voteBtns button').forEach((b) => { b.disabled = !rest.length; });
   if (!rest.length) {
-    deck.innerHTML = '<div class="deck-done"><div class="big" aria-hidden="true">🌸</div><h3>All swiped!</h3><p class="empty">Check the group favourites, then see your plan bloom.</p></div>';
+    deck.innerHTML = allPlaces().length
+      ? '<div class="deck-done"><div class="big" aria-hidden="true">🌸</div><h3>All swiped!</h3><p class="empty">Check the group favourites, then see your plan bloom. New ideas from friends will pop up here.</p></div>'
+      : '<div class="deck-done"><div class="big" aria-hidden="true">💡</div><h3>No ideas yet</h3><p class="empty">Add the first place or activity in <strong>Got another idea?</strong> — everyone in the group will be able to swipe on it.</p></div>';
     return;
   }
   deck.innerHTML = rest.slice(0, 3).map((pl, i) => cardHTML(pl, i)).reverse().join('');
@@ -139,7 +141,7 @@ export function vote(v) {
   const pl = allPlaces()[state.deckIndex];
   const card = $('#deck .card[data-depth="0"]');
   state.me.votes[pl.id] = v;
-  if (state.mode === 'live') saveSoon({ votes: Object.assign({}, state.me.votes) });
+  if (state.mode === 'live') saveSoon({ votes: currentVotes(state.me) });
   const word = v === 1 ? 'Love it' : v === 0 ? 'Maybe' : 'Pass';
   buzz(v === 1 ? [10, 40, 10] : 8);
   if (card) {
@@ -167,7 +169,7 @@ export function undoVote() {
   const pl = allPlaces()[lastIdx];
   if (!pl || !(pl.id in state.me.votes)) return;
   delete state.me.votes[pl.id];
-  if (state.mode === 'live') saveSoon({ votes: Object.assign({}, state.me.votes) });
+  if (state.mode === 'live') saveSoon({ votes: currentVotes(state.me) });
   state.deckIndex = lastIdx;
   renderDeck();
   refresh();
@@ -270,11 +272,13 @@ export function renderRanking() {
   }
   const btn = $('#toBloom'), hint = $('#toBloomHint');
   if (btn) {
-    const done = Object.keys(state.me.votes).length;
-    const left = allPlaces().length - done;
-    btn.disabled = left > 0;
-    hint.innerHTML = '<span class="ab-progress" aria-hidden="true"><i style="--w:' + Math.round(done / allPlaces().length * 100) + '%"></i></span>' +
-      '<span>' + (left > 0 ? done + ' of ' + allPlaces().length + ' swiped' + (left <= 2 ? ' — almost there!' : '') : '✓ All swiped — ready when you are') + '</span>';
+    const count = allPlaces().length;
+    const done = votedCount(state.me);
+    const left = count - done;
+    btn.disabled = !count || left > 0;
+    hint.innerHTML = !count ? '<span>💡 Add the first idea to get the deck going</span>'
+      : '<span class="ab-progress" aria-hidden="true"><i style="--w:' + Math.round(done / count * 100) + '%"></i></span>' +
+        '<span>' + (left > 0 ? done + ' of ' + count + ' swiped' + (done && left <= 2 ? ' — almost there!' : '') : '✓ All swiped — ready when you are') + '</span>';
     const undo = $('#undoVote');
     if (undo) undo.disabled = !done;
   }
