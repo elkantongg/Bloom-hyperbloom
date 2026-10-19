@@ -6,6 +6,7 @@ import { rankPlaces } from './derive.js';
 import { announce, avatarStack, buzz, namesList, refresh, sidebarHTML, toast } from './ui.js';
 import { go, later } from './router.js';
 import { simulateTimes } from './times.js';
+import { bindSearch, searchHTML } from './search.js';
 import { api, applyState, saveSoon } from './live.js';
 import { updateWeatherEls } from './weather.js';
 
@@ -24,6 +25,7 @@ export function placesHTML() {
         '<p class="kbd-hint">Keyboard: <kbd>←</kbd> pass · <kbd>↑</kbd> maybe · <kbd>→</kbd> love it</p>' +
       '</div>' +
       '<div class="places-side">' +
+      (state.googlePlaces ? searchHTML() :
       '<form class="panel suggest" id="suggestForm" novalidate>' +
         '<h2 class="sub-title">Got another idea?</h2>' +
         '<p class="suggest-sub">Add it to everyone’s deck. Pick the type first — we’ll ask you to confirm the exact place. Add an area for a specific branch, like “Din Tai Fung Tampines”.</p>' +
@@ -36,7 +38,7 @@ export function placesHTML() {
         '</div>' +
         '<p class="form-error" id="sgError" role="alert"></p>' +
         '<div class="picker" id="sgPicker" hidden></div>' +
-      '</form>' +
+      '</form>') +
       '<div class="panel"><h2 class="sub-title">Group favourites</h2>' +
         '<ol class="rank-list" id="rankList" aria-live="polite"></ol>' +
       '</div>' +
@@ -50,13 +52,16 @@ export function placesHTML() {
 
 export function cardHTML(pl, depth) {
   const top = depth === 0;
+  const photo = pl.photoUrl ? { src: pl.photoUrl, credit: pl.photoCredit, href: pl.photoCreditUrl }
+    : pl.photo ? { src: commonsImage(pl.photo), credit: 'Photo: Wikimedia Commons', href: commonsPage(pl.photo) } : {};
   return '<article class="card" data-id="' + pl.id + '" data-depth="' + depth + '" style="--depth:' + depth + ';--hue:' + pl.hue + '"' +
     (top ? ' tabindex="0" aria-label="' + esc([pl.name, pl.kind, pl.price, pl.dist].filter(Boolean).join(', ') + '. ' + pl.blurb + ' ' + pl.tags.join(', ')) + '"' : ' aria-hidden="true"') + '>' +
     '<span class="stamp yes" aria-hidden="true">LOVE IT</span><span class="stamp no" aria-hidden="true">PASS</span><span class="stamp maybe" aria-hidden="true">MAYBE</span>' +
     // Photo on top of a coloured gradient + emoji, which shows if the photo can't load.
     '<div class="card-art"><span aria-hidden="true">' + pl.emoji + '</span>' +
-      (pl.photo ? '<img class="card-photo" src="' + esc(commonsImage(pl.photo)) + '" alt="" loading="lazy" draggable="false">' +
-        '<a class="photo-credit" href="' + esc(commonsPage(pl.photo)) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Photo: Wikimedia Commons<span class="sr-only"> (opens in a new tab)</span></a>'
+      (photo.src ? '<img class="card-photo" src="' + esc(photo.src) + '" alt="" loading="lazy" draggable="false">' +
+        (photo.href ? '<a class="photo-credit" href="' + esc(photo.href) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>' + esc(photo.credit) + '<span class="sr-only"> (opens in a new tab)</span></a>'
+          : '<span class="photo-credit">' + esc(photo.credit) + '</span>')
         : pl.map ? mapHTML(pl.map, top) : '') +
       '<span class="kind">' + esc(pl.kind) + '</span></div>' +
     '<div class="card-body"><h3>' + esc(pl.name) + '</h3>' +
@@ -67,7 +72,7 @@ export function cardHTML(pl, depth) {
       '<div class="meta-row">' +
         (pl.tags.length ? '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' : '') +
         (pl.website ? '<a class="g-link" href="' + esc(pl.website) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Website &amp; tickets <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' : '') +
-        '<a class="g-link" href="' + googleLink(pl) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Look it up on Google <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
+        '<a class="g-link" href="' + googleLink(pl) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>' + (pl.link ? 'Open in Google Maps' : 'Look it up on Google') + ' <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
       '</div>' +
       (pl.outdoor ? '<div class="wx" data-wx hidden></div>' : '') +
       '<div class="card-friends" data-friends="' + pl.id + '"></div>' +
@@ -261,12 +266,13 @@ export function hidePicker() {
   if (box) { box.hidden = true; box.innerHTML = ''; }
 }
 
-export async function saveSuggestion(name, kind, match) {
+// `google` = full details of a place picked in the Google search (search.js).
+export async function saveSuggestion(name, kind, match, google) {
   const err = $('#sgError');
-  let label = match ? (match.name || name) + (match.area ? ' (' + match.area + ')' : '') : name;
+  let label = google ? name : match ? (match.name || name) + (match.area ? ' (' + match.area + ')' : '') : name;
   if (label.length > 40) label = label.slice(0, 39) + '…';
   if (allPlaces().some((p) => p.name.toLowerCase() === label.toLowerCase())) { if (err) err.textContent = '“' + label + '” is already in the deck.'; return; }
-  const details = match ? { area: match.area, address: match.address, category: match.category, price: match.price,
+  const details = google ? google : match ? { area: match.area, address: match.address, category: match.category, price: match.price,
     hours: match.hours, hoursText: match.hoursText, website: match.website, phone: match.phone,
     photo: match.photo, lat: match.lat, lon: match.lon } : null;
   if (state.mode === 'live') {
@@ -324,7 +330,8 @@ export function bindPlaces() {
   });
   $('#toBloom').addEventListener('click', () => go('bloom'));
   $('#undoVote').addEventListener('click', undoVote);
-  $('#suggestForm').addEventListener('submit', addSuggestion);
+  if (state.googlePlaces) bindSearch();
+  else $('#suggestForm').addEventListener('submit', addSuggestion);
   simulateTimes(); // in case someone jumps straight here
   simulateVotes();
 }

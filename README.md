@@ -57,6 +57,23 @@ No user accounts are needed. Passwords are stored hashed (PBKDF2), each person g
 ## APIs
 - **[Open-Meteo](https://open-meteo.com/)** weather forecast API (free, no key, no sign-in). The plan card shows the forecast for the chosen time, and outdoor places warn you when rain is likely. Weather data by Open-Meteo.com (CC BY 4.0).
 
+## Place search (Google Maps-style, optional)
+With a Google Places API key, "Got another idea?" works like a mini Google Maps:
+suggestions as you type (with typo correction), the exact place's real photo,
+rating, price tier, today's hours, and an "Open in Google Maps" link.
+
+1. In Google Cloud Console, enable **Places API (New)** and create an API key
+   (restrict it to Places API (New)). Google requires a billing account; check
+   its current pricing and free usage allowance.
+2. Create a `.env` file in this folder (it is git-ignored):
+   ```
+   GOOGLE_PLACES_API_KEY=your-key-here
+   ```
+3. Restart with `npm start`. The terminal shows which place search is active.
+
+The key stays on the server; the browser only talks to `/api/places/*`, which is
+rate-limited per person. Without a key, Bloom uses OpenStreetMap search instead.
+
 ## Project structure
 ```
 index.html        page shell (header, nav, accessibility menu)
@@ -74,6 +91,7 @@ js/
   derive.js       best times, place rankings, bloom score
   ui.js           toasts, avatars, flower, side panel, milestones
   settings.js     accessibility options, page size, theme, home nav
+  search.js       Google Maps-style place search (when a key is set)
   weather.js      forecast (Open-Meteo)
   data.js         built-in places + group suggestions
   dates.js        the planning week and date formatting

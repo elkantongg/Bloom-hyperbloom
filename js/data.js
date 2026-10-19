@@ -27,13 +27,23 @@ export function customPlace(c) {
   const k = KINDS[c.kind === 'outdoors' ? 'activity' : c.kind] || KINDS.other;
   const by = c.addedBy === state.me.id ? 'you' : ((state.friends.find((f) => f.id === c.addedBy) || {}).name || 'a friend');
   const d = c.details || null; // the place the person confirmed from the list, if any
+  const g = !!(d && d.source === 'google');
   return { id: c.id, q: c.name, name: c.name, kind: (d && d.category) || k.label, emoji: k.emoji, hue: k.hue,
-    price: (d && d.price) || '', dist: (d && d.area) || '', // Only a photo of this exact place; otherwise the card shows a map of where it is.
-    photo: (d && d.photo) || '', map: d && typeof d.lat === 'number' && typeof d.lon === 'number' ? { lat: d.lat, lon: d.lon } : null,
+    price: (d && d.price) || '', dist: g ? '' : (d && d.area) || '',
+    // Only a photo of this exact place (from Google, or the free map's own photo);
+    // otherwise the card shows a map pinned on where it is.
+    photo: (!g && d && d.photo) || '',
+    photoUrl: g && d.photoRef ? '/api/places/photo?name=' + encodeURIComponent(d.photoRef) : '',
+    photoCredit: g && d.photoRef ? 'Photo: ' + (d.photoBy || 'Google') + ' · Google' : '',
+    photoCreditUrl: g && d.photoRef ? d.photoByUrl || d.mapsUrl || '' : '',
+    link: g && d.mapsUrl ? d.mapsUrl : '',
+    map: d && typeof d.lat === 'number' && typeof d.lon === 'number' ? { lat: d.lat, lon: d.lon } : null,
     hoursToday: d ? (todaysHours(d.hours) || d.hoursText || '') : '',
     website: d && /^https?:\/\//.test(d.website || '') ? d.website : '',
     blurb: d && d.address ? d.address + ' · Suggested by ' + by + '.' : 'Suggested by ' + by + '. Tap the Google link to check hours, prices and reviews.',
-    tags: [], custom: true, addedBy: c.addedBy };
+    tags: d ? [d.stepFree && 'Step-free', d.rating && '⭐ ' + Number(d.rating).toFixed(1) + (d.reviews ? ' (' + Number(d.reviews).toLocaleString() + ')' : ''),
+      d.openNow === true && 'Open now', d.reservable && 'Takes reservations'].filter(Boolean) : [],
+    custom: true, addedBy: c.addedBy };
 }
 // Map hours are listed Monday-first: "Monday: 08:30 – 18:00".
 export function todaysHours(lines) {
@@ -53,7 +63,8 @@ export function currentVotes(p) {
   const ids = new Set(allPlaces().map((pl) => pl.id));
   return Object.fromEntries(Object.entries(p.votes).filter(([id]) => ids.has(id)));
 }
-export const googleLink = (pl) => 'https://www.google.com/search?q=' + encodeURIComponent(pl.q || pl.name);
+// The exact Google Maps page when we have it; otherwise a Google search for the name.
+export const googleLink = (pl) => pl.link || 'https://www.google.com/search?q=' + encodeURIComponent(pl.q || pl.name);
 
 export const FRIEND_VOTES = {
   maya: { noodle: 1, bowling: 0, picnic: 1, escape: -1, karaoke: 1, cafe: 1 },

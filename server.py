@@ -221,6 +221,114 @@ def osm_lookup(query, kind):
     return out
 
 
+# ---------- Google Places (optional, needs GOOGLE_PLACES_API_KEY in .env) ----------
+# Works like a mini Google Maps: autocomplete (with typo correction), then the
+# exact place's details and photo. The key never leaves the server.
+GOOGLE_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "").strip()
+GOOGLE_BASE = os.environ.get("GOOGLE_PLACES_BASE", "https://places.googleapis.com/v1").rstrip("/")
+GOOGLE_PRICE = {"PRICE_LEVEL_FREE": "Free", "PRICE_LEVEL_INEXPENSIVE": "$", "PRICE_LEVEL_MODERATE": "$$",
+                "PRICE_LEVEL_EXPENSIVE": "$$$", "PRICE_LEVEL_VERY_EXPENSIVE": "$$$$"}
+GOOGLE_BIAS = {"circle": {"center": {"latitude": 1.3521, "longitude": 103.8198}, "radius": 50000.0}}
+DETAIL_FIELDS = ",".join([
+    "id", "displayName", "formattedAddress", "shortFormattedAddress", "location", "primaryType",
+    "primaryTypeDisplayName", "priceLevel", "rating", "userRatingCount", "regularOpeningHours.weekdayDescriptions",
+    "currentOpeningHours.openNow", "googleMapsUri", "websiteUri", "reservable",
+    "accessibilityOptions.wheelchairAccessibleEntrance", "photos",
+])
+PHOTO_URIS = {}  # photo name -> (time, short-lived image URL)
+PLACE_ID = re.compile(r"[A-Za-z0-9_-]{10,300}")
+PHOTO_NAME = re.compile(r"places/[A-Za-z0-9_-]{10,300}/photos/[A-Za-z0-9_-]{10,600}")
+SESSION = re.compile(r"[A-Za-z0-9-]{8,64}")
+
+
+def google(path, body=None, fields=None, params=None):
+    url = GOOGLE_BASE + path + ("?" + urllib.parse.urlencode(params) if params else "")
+    req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None,
+                                 method="POST" if body is not None else "GET")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("X-Goog-Api-Key", GOOGLE_KEY)
+    if fields:
+        req.add_header("X-Goog-FieldMask", fields)
+    with urllib.request.urlopen(req, timeout=8) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def google_autocomplete(text, session):
+    data = google("/places:autocomplete", {
+        "input": text, "includedRegionCodes": [REGION], "languageCode": "en",
+        "locationBias": GOOGLE_BIAS, **({"sessionToken": session} if session else {}),
+    })
+    out = []
+    for s_ in data.get("suggestions") or []:
+        p = s_.get("placePrediction")
+        if not p or not p.get("placeId"):
+            continue
+        fmt = p.get("structuredFormat") or {}
+        out.append({"placeId": p["placeId"],
+                    "main": (fmt.get("mainText") or {}).get("text") or (p.get("text") or {}).get("text"),
+                    "secondary": (fmt.get("secondaryText") or {}).get("text")})
+    return out[:6]
+
+
+def kind_from_type(t):
+    t = t or ""
+    if t in ("cafe", "coffee_shop", "bar", "pub", "wine_bar", "tea_house", "juice_shop", "night_club") or "bar" in t:
+        return "drinks"
+    if t.endswith("restaurant") or t in ("bakery", "meal_takeaway", "food_court", "dessert_shop", "ice_cream_shop", "food"):
+        return "food"
+    return "activity"
+
+
+def google_details(place_id, session):
+    p = google("/places/" + place_id, fields=DETAIL_FIELDS, params={"sessionToken": session} if session else None)
+    photo = (p.get("photos") or [{}])[0]
+    author = (photo.get("authorAttributions") or [{}])[0]
+    loc = p.get("location") or {}
+    return {
+        "source": "google", "placeId": p.get("id") or place_id,
+        "name": (p.get("displayName") or {}).get("text"),
+        "address": p.get("formattedAddress"), "area": p.get("shortFormattedAddress"),
+        "category": (p.get("primaryTypeDisplayName") or {}).get("text"),
+        "kind": kind_from_type(p.get("primaryType")),
+        "price": GOOGLE_PRICE.get(p.get("priceLevel")),
+        "rating": p.get("rating"), "reviews": p.get("userRatingCount"),
+        "hours": (p.get("regularOpeningHours") or {}).get("weekdayDescriptions") or [],
+        "openNow": (p.get("currentOpeningHours") or {}).get("openNow"),
+        "mapsUrl": p.get("googleMapsUri"), "website": p.get("websiteUri"),
+        "reservable": p.get("reservable"),
+        "stepFree": (p.get("accessibilityOptions") or {}).get("wheelchairAccessibleEntrance"),
+        "lat": loc.get("latitude"), "lon": loc.get("longitude"),
+        "photoRef": photo.get("name"),
+        # Google asks apps to credit the photo's author.
+        "photoBy": author.get("displayName"), "photoByUrl": author.get("uri"),
+    }
+
+
+def google_photo_uri(name):
+    hit = PHOTO_URIS.get(name)
+    if hit and time.time() - hit[0] < 1800:
+        return hit[1]
+    data = google("/" + name + "/media", params={"maxWidthPx": 800, "skipHttpRedirect": "true"})
+    uri = data.get("photoUri")
+    if uri:
+        PHOTO_URIS[name] = (time.time(), uri)
+        if len(PHOTO_URIS) > 3000:
+            PHOTO_URIS.pop(next(iter(PHOTO_URIS)))
+    return uri
+
+
+def rate_ok(ip, bucket, limit):
+    """Simple per-person limit so nobody can run up the Google bill."""
+    k = (ip, bucket)
+    recent = [t for t in LOOKUP_HITS.get(k, []) if t > time.time() - 60]
+    if len(recent) >= limit:
+        return False
+    LOOKUP_HITS[k] = recent + [time.time()]
+    if len(LOOKUP_HITS) > 5000:
+        LOOKUP_HITS.clear()
+    return True
+
+
 def clean_details(d):
     """The confirmed match arrives from the browser, so keep only short plain-text fields."""
     if not isinstance(d, dict):
@@ -238,6 +346,21 @@ def clean_details(d):
            # A Wikimedia Commons file name; the browser builds the image URL from it.
            "photo": s(d.get("photo"), 200) if isinstance(d.get("photo"), str) and "/" not in d.get("photo") else None,
            "lat": coord(d.get("lat"), 90), "lon": coord(d.get("lon"), 180)}
+    def b(v):
+        return v if isinstance(v, bool) else None
+    def num(v, hi):
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= hi else None
+    if d.get("source") == "google":
+        out.update({
+            "source": "google",
+            "placeId": d.get("placeId") if isinstance(d.get("placeId"), str) and PLACE_ID.fullmatch(d["placeId"]) else None,
+            "name": s(d.get("name"), 80), "price": d.get("price") if d.get("price") in GOOGLE_PRICE.values() else None,
+            "rating": num(d.get("rating"), 5), "reviews": num(d.get("reviews"), 10_000_000),
+            "openNow": b(d.get("openNow")), "reservable": b(d.get("reservable")), "stepFree": b(d.get("stepFree")),
+            "mapsUrl": url(d.get("mapsUrl")),
+            "photoRef": d.get("photoRef") if isinstance(d.get("photoRef"), str) and PHOTO_NAME.fullmatch(d["photoRef"]) else None,
+            "photoBy": s(d.get("photoBy"), 80), "photoByUrl": url(d.get("photoByUrl")),
+        })
     return out if any(out.values()) else None
 
 SCHEMA = """
@@ -406,9 +529,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
+        q = parse_qs(parsed.query)
+        arg = lambda k: q.get(k, [""])[0]
         if path == "/api/lookup":
-            q = parse_qs(parsed.query)
-            return self.lookup(q.get("q", [""])[0], q.get("kind", [""])[0])
+            return self.lookup(arg("q"), arg("kind"))
+        if path == "/api/config":
+            return self.send_json(200, {"googlePlaces": bool(GOOGLE_KEY)})
+        if path in ("/api/places/autocomplete", "/api/places/details", "/api/places/photo"):
+            return self.google_route(path.rsplit("/", 1)[1], arg)
         if path.startswith("/api/"):
             return self.api("GET", path)
         if path in STATIC:
@@ -558,6 +686,43 @@ class Handler(BaseHTTPRequestHandler):
             payload = group_state(gid, member_id)
         self.send_json(200, payload)
 
+    def google_route(self, which, arg):
+        if not GOOGLE_KEY:
+            return self.send_json(404, {"error": "Google Places isn't set up on this server"})
+        ip = self.client_address[0]
+        session = arg("session") if SESSION.fullmatch(arg("session") or "") else None
+        try:
+            if which == "autocomplete":
+                text = arg("q").strip()[:80]
+                if len(text) < 2:
+                    return self.send_json(200, {"results": []})
+                if not rate_ok(ip, "ac", 120):
+                    return self.send_json(429, {"error": "Too many searches — try again in a minute"})
+                return self.send_json(200, {"results": google_autocomplete(text, session)})
+            if which == "details":
+                pid = arg("id")
+                if not PLACE_ID.fullmatch(pid or ""):
+                    return self.send_json(400, {"error": "Unknown place"})
+                if not rate_ok(ip, "details", 30):
+                    return self.send_json(429, {"error": "Too many lookups — try again in a minute"})
+                return self.send_json(200, {"place": google_details(pid, session)})
+            # photo: redirect the browser to a short-lived image URL (the key stays here)
+            name = arg("name")
+            if not PHOTO_NAME.fullmatch(name or ""):
+                return self.send_json(400, {"error": "Unknown photo"})
+            if not rate_ok(ip, "photo", 120):
+                return self.send_json(429, {"error": "Too many photos — try again in a minute"})
+            uri = google_photo_uri(name)
+            if not uri or not uri.startswith("https://"):
+                return self.send_json(404, {"error": "No photo"})
+            self.send_response(302)
+            self.send_header("Location", uri)
+            self.send_header("Cache-Control", "private, max-age=1500")
+            self.end_headers()
+        except (urllib.error.URLError, ValueError, TimeoutError, OSError) as e:
+            print(f"Google Places request failed: {e}")
+            self.send_json(502, {"error": "Couldn't reach Google right now"})
+
     def lookup(self, query, kind):
         query = query.strip()[:80]
         if len(query) < 2:
@@ -610,6 +775,8 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Bloom is running at http://localhost:{PORT}  (database: {os.path.relpath(DB_PATH, ROOT)})")
+    print("Place search: " + ("Google Places (autocomplete, real photos)" if GOOGLE_KEY
+          else "OpenStreetMap (free). Add GOOGLE_PLACES_API_KEY to .env for Google Maps-style search."))
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
