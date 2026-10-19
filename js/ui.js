@@ -105,7 +105,8 @@ export function sidebarHTML() {
 export function statusOf(p) {
   if (!p.joined) return 'Invite sent';
   const v = votedCount(p);
-  if (v >= allPlaces().length) return 'All done ✓';
+  // Done means hours painted and every place voted on (a new group has no places yet).
+  if (p.avail.size && allPlaces().length && v >= allPlaces().length) return 'All done ✓';
   if (v > 0) return 'Voted ' + v + ' of ' + allPlaces().length;
   if (p.avail.size) return 'Added ' + p.avail.size + ' free hours';
   return p === state.me ? 'Paint your free times' : 'Adding times…';
