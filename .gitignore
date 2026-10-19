@@ -31,3 +31,7 @@ search/.cache/
 
 # Python virtual environment
 .venv/
+
+# Vercel build output (created during deploy)
+public/
+.vercel/

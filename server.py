@@ -777,6 +777,17 @@ class Handler(BaseHTTPRequestHandler):
            "font-src https://fonts.gstatic.com; img-src 'self' data: https:; "
            "connect-src 'self' https://api.open-meteo.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 
+    def client_ip(self):
+        """Who's asking, for rate limits and the wrong-password lockout. On Vercel every
+        request arrives from its proxy, which puts the visitor's real address in
+        X-Forwarded-For (and overwrites any value the visitor sent). Elsewhere that header
+        could be faked, so it's only trusted on Vercel."""
+        if os.environ.get("VERCEL"):
+            fwd = (self.headers.get("X-Forwarded-For") or self.headers.get("X-Real-IP") or "").split(",")[0].strip()
+            if fwd:
+                return fwd[:64]
+        return self.client_address[0]
+
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
@@ -900,7 +911,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": "Something went wrong on the server"})
 
     def create_group(self):
-        if not rate_ok(self.client_address[0], "create", 20):
+        if not rate_ok(self.client_ip(), "create", 20):
             raise ApiError(429, "You've created a lot of groups just now — try again in a minute")
         body = self.read_body()
         title = text(body, "title", 1, 40)
@@ -930,7 +941,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {"title": g["title"], "host": g["host_name"], "memberCount": count})
 
     def join(self, gid):
-        ip = self.client_address[0]
+        ip = self.client_ip()
         key = (gid, ip)
         with FAILS_LOCK:
             count, until = FAILS.get(key, (0, 0))
@@ -998,7 +1009,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(400, {"error": "Paste a link first"})
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
-        if not rate_ok(self.client_address[0], "link", 10):
+        if not rate_ok(self.client_ip(), "link", 10):
             return self.send_json(429, {"error": "Too many links — try again in a minute"})
         try:
             self.send_json(200, {"place": link_preview(url)})
@@ -1009,7 +1020,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def places_route(self, which, arg):
         """Place search: Google Places if a key is set, otherwise free (Photon + OpenStreetMap)."""
-        ip = self.client_address[0]
+        ip = self.client_ip()
         if not GOOGLE_KEY:
             return self.free_places_route(which, arg, ip)
         session = arg("session") if SESSION.fullmatch(arg("session") or "") else None
@@ -1072,7 +1083,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def edit_place(self, gid, pid):
         """The person who suggested a place (or the host) can fix its name, type and details."""
-        if not rate_ok(self.client_address[0], "editplace", 30):
+        if not rate_ok(self.client_ip(), "editplace", 30):
             raise ApiError(429, "Slow down a little — try again in a minute")
         body = self.read_body()
         name = text(body, "name", 1, MAX_PLACE_NAME)
@@ -1117,7 +1128,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, payload)
 
     def add_place(self, gid):
-        if not rate_ok(self.client_address[0], "addplace", 30):
+        if not rate_ok(self.client_ip(), "addplace", 30):
             raise ApiError(429, "Slow down a little — try again in a minute")
         body = self.read_body()
         details = clean_details(body.get("details"))
