@@ -1,6 +1,6 @@
 # Bloom — plans that actually happen
 
-Paint when you're free, swipe on where to go, and watch your group's plan bloom.
+Don’t leave your plans in the bud. Make room for Bloom.
 
 ## The problem
 Making plans with friends dies in the group chat: "when's everyone free?", "idk, you pick", 200 messages later, nothing happens. Existing tools (When2meet, polls) solve one piece, look dated, and don't make deciding *where* any easier.
