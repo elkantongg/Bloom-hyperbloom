@@ -33,7 +33,9 @@ STATIC = {
 }
 
 COLORS = ["#2F6FEB", "#E4477A", "#D9831A", "#7C5CFF", "#11966A", "#0E8E9C", "#B4469B", "#8A6D1F", "#C2410C", "#4F46E5", "#0F766E", "#BE185D"]
-PLACE_IDS = {"noodle", "bowling", "picnic", "escape", "karaoke", "cafe"}
+PLACE_IDS = {"noodle", "bowling", "picnic", "escape", "karaoke", "cafe"}  # built-in suggestions
+KINDS = {"food", "drinks", "activity", "outdoors", "other"}
+MAX_CUSTOM_PLACES = 20
 MAX_MEMBERS = 12
 MAX_BODY = 16 * 1024
 SLOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}@\d{1,2}$")
@@ -62,6 +64,15 @@ CREATE TABLE IF NOT EXISTS members (
     updated_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS members_by_group ON members(group_id);
+CREATE TABLE IF NOT EXISTS places (
+    id          TEXT PRIMARY KEY,
+    group_id    TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    added_by    TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS places_by_group ON places(group_id);
 """
 
 
@@ -126,9 +137,13 @@ def group_state(group_id, member_id):
         "SELECT id, name, color, avail, votes, is_host FROM members WHERE group_id=? ORDER BY joined_at, rowid",
         (group_id,),
     ).fetchall()
+    places = DB.execute(
+        "SELECT id, name, kind, added_by FROM places WHERE group_id=? ORDER BY created_at, rowid", (group_id,)
+    ).fetchall()
     return {
         "group": {"id": g["id"], "title": g["title"], "host": g["host_name"], "startDate": g["start_date"]},
         "me": member_id,
+        "places": [{"id": p["id"], "name": p["name"], "kind": p["kind"], "addedBy": p["added_by"]} for p in places],
         "members": [
             {
                 "id": r["id"], "name": r["name"], "color": r["color"], "isHost": bool(r["is_host"]),
@@ -233,6 +248,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(200, payload)
                 if method == "PUT" and rest == ["me"]:
                     return self.update_me(gid)
+                if method == "POST" and rest == ["places"]:
+                    return self.add_place(gid)
             raise ApiError(404, "Not found")
         except ApiError as e:
             self.send_json(e.status, {"error": e.message})
@@ -314,10 +331,14 @@ class Handler(BaseHTTPRequestHandler):
         if "votes" in body:
             votes = body["votes"]
             # type() check rejects true/false, which Python would otherwise treat as 1/0.
-            if not isinstance(votes, dict) or not all(k in PLACE_IDS and type(v) is int and v in (-1, 0, 1) for k, v in votes.items()):
+            if not isinstance(votes, dict) or not all(isinstance(k, str) and type(v) is int and v in (-1, 0, 1) for k, v in votes.items()):
                 raise ApiError(400, "Invalid votes")
         with DB_LOCK:
             member_id = self.auth(gid)
+            if votes is not None:
+                allowed = PLACE_IDS | {r[0] for r in DB.execute("SELECT id FROM places WHERE group_id=?", (gid,))}
+                if not set(votes) <= allowed:
+                    raise ApiError(400, "Invalid votes")
             if avail is not None:
                 DB.execute("UPDATE members SET avail=?, updated_at=? WHERE id=?", (json.dumps(sorted(set(avail))), now(), member_id))
             if votes is not None:
@@ -325,6 +346,27 @@ class Handler(BaseHTTPRequestHandler):
             DB.commit()
             payload = group_state(gid, member_id)
         self.send_json(200, payload)
+
+    def add_place(self, gid):
+        body = self.read_body()
+        name = text(body, "name", 1, 40)
+        kind = body.get("kind")
+        if kind not in KINDS:
+            raise ApiError(400, "Pick a type: food, drinks, activity, outdoors or other")
+        with DB_LOCK:
+            member_id = self.auth(gid)
+            existing = [r[0].casefold() for r in DB.execute("SELECT name FROM places WHERE group_id=?", (gid,))]
+            if name.casefold() in existing:
+                raise ApiError(409, f"“{name}” is already in the deck")
+            if len(existing) >= MAX_CUSTOM_PLACES:
+                raise ApiError(403, f"This group already has {MAX_CUSTOM_PLACES} suggestions")
+            DB.execute(
+                "INSERT INTO places (id, group_id, name, kind, added_by, created_at) VALUES (?,?,?,?,?,?)",
+                ("p_" + secrets.token_urlsafe(6), gid, name, kind, member_id, now()),
+            )
+            DB.commit()
+            payload = group_state(gid, member_id)
+        self.send_json(201, payload)
 
 
 def main():

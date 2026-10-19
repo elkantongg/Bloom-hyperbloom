@@ -51,13 +51,31 @@
   ];
 
   const PLACES = [
-    { id: 'noodle', name: 'Lantern Noodle Bar', kind: 'Dinner', emoji: '🍜', price: '$$', dist: '1.2 km', blurb: 'Hand-pulled noodles and big shared tables.', tags: ['Step-free', 'Veg options'], hue: '#FFC48A' },
-    { id: 'bowling', name: 'Strike Social', kind: 'Bowling', emoji: '🎳', price: '$$', dist: '3.4 km', blurb: 'Retro lanes, arcade machines and milkshakes.', tags: ['Step-free', 'Groups of 6+'], hue: '#A9C4FF' },
-    { id: 'picnic', name: 'Botanic Gardens Picnic', kind: 'Outdoors', emoji: '🧺', price: 'Free', dist: '2.0 km', blurb: 'Bring snacks, find a shady lawn, stay till sunset.', tags: ['Free', 'Weather-dependent'], hue: '#A8E6B4', outdoor: true },
-    { id: 'escape', name: 'Clockwork Escape Room', kind: 'Activity', emoji: '🔐', price: '$$$', dist: '4.1 km', blurb: '60 minutes to escape a locked inventor’s study.', tags: ['Max 6 people', 'Book ahead'], hue: '#D2B8FF' },
-    { id: 'karaoke', name: 'Echo Box Karaoke', kind: 'Karaoke', emoji: '🎤', price: '$$', dist: '2.7 km', blurb: 'Private rooms, 5,000+ songs, zero judgement.', tags: ['Private room', 'Open late'], hue: '#FFB0D2' },
-    { id: 'cafe', name: 'Paper Crane Board Game Café', kind: 'Café', emoji: '🎲', price: '$', dist: '0.8 km', blurb: '300 board games, waffles and quiet corners.', tags: ['Quiet', 'Step-free'], hue: '#FFE08A' },
+    { id: 'noodle', q: 'noodle bar near me', name: 'Lantern Noodle Bar', kind: 'Dinner', emoji: '🍜', price: '$$', dist: '1.2 km', blurb: 'Hand-pulled noodles and big shared tables.', tags: ['Step-free', 'Veg options'], hue: '#FFC48A' },
+    { id: 'bowling', q: 'bowling alley near me', name: 'Strike Social', kind: 'Bowling', emoji: '🎳', price: '$$', dist: '3.4 km', blurb: 'Retro lanes, arcade machines and milkshakes.', tags: ['Step-free', 'Groups of 6+'], hue: '#A9C4FF' },
+    { id: 'picnic', q: 'botanic gardens picnic', name: 'Botanic Gardens Picnic', kind: 'Outdoors', emoji: '🧺', price: 'Free', dist: '2.0 km', blurb: 'Bring snacks, find a shady lawn, stay till sunset.', tags: ['Free', 'Weather-dependent'], hue: '#A8E6B4', outdoor: true },
+    { id: 'escape', q: 'escape room near me', name: 'Clockwork Escape Room', kind: 'Activity', emoji: '🔐', price: '$$$', dist: '4.1 km', blurb: '60 minutes to escape a locked inventor’s study.', tags: ['Max 6 people', 'Book ahead'], hue: '#D2B8FF' },
+    { id: 'karaoke', q: 'karaoke near me', name: 'Echo Box Karaoke', kind: 'Karaoke', emoji: '🎤', price: '$$', dist: '2.7 km', blurb: 'Private rooms, 5,000+ songs, zero judgement.', tags: ['Private room', 'Open late'], hue: '#FFB0D2' },
+    { id: 'cafe', q: 'board game cafe near me', name: 'Paper Crane Board Game Café', kind: 'Café', emoji: '🎲', price: '$', dist: '0.8 km', blurb: '300 board games, waffles and quiet corners.', tags: ['Quiet', 'Step-free'], hue: '#FFE08A' },
   ];
+
+  // Types for places the group suggests themselves.
+  const KINDS = {
+    food: { label: 'Food', emoji: '🍽️', hue: '#FFC48A' },
+    drinks: { label: 'Drinks', emoji: '🧋', hue: '#FFB0D2' },
+    activity: { label: 'Activity', emoji: '🎯', hue: '#A9C4FF' },
+    outdoors: { label: 'Outdoors', emoji: '🌳', hue: '#A8E6B4' },
+    other: { label: 'Something else', emoji: '✨', hue: '#D2B8FF' },
+  };
+  function customPlace(c) {
+    const k = KINDS[c.kind] || KINDS.other;
+    const by = c.addedBy === state.me.id ? 'you' : ((state.friends.find((f) => f.id === c.addedBy) || {}).name || 'a friend');
+    return { id: c.id, q: c.name, name: c.name, kind: k.label, emoji: k.emoji, hue: k.hue, price: '', dist: '',
+      blurb: 'Suggested by ' + by + '.', tags: [], custom: true, addedBy: c.addedBy };
+  }
+  // Everything in the deck: built-in ideas first, then the group's own suggestions.
+  function allPlaces() { return PLACES.concat(state.custom.map(customPlace)); }
+  const googleLink = (pl) => 'https://www.google.com/search?q=' + encodeURIComponent(pl.q || pl.name);
 
   const FRIEND_VOTES = {
     maya: { noodle: 1, bowling: 0, picnic: 1, escape: -1, karaoke: 1, cafe: 1 },
@@ -78,6 +96,7 @@
     friends: FRIENDS.map((f) => Object.assign({}, f, { avail: new Set(), votes: {}, joined: false })),
     sim: { times: false, votes: false },
     deckIndex: 0,
+    custom: [],          // places the group suggested: { id, name, kind, addedBy }
     milestones: {},
     coachDone: { grid: false, deck: false },
     pickRun: null,
@@ -132,7 +151,7 @@
   }
 
   function rankPlacesFresh() {
-    return PLACES.map((pl) => {
+    return allPlaces().map((pl) => {
       const r = Object.assign({}, pl, { points: 0, voters: 0, yes: [], maybe: [], no: [] });
       people().forEach((p) => {
         const v = p.votes[pl.id];
@@ -148,7 +167,7 @@
 
   function personProgress(p) {
     if (!p.joined) return 0;
-    const voted = Object.keys(p.votes).length / PLACES.length;
+    const voted = Object.keys(p.votes).length / allPlaces().length;
     return 0.2 + (p.avail.size ? 0.4 : 0) + 0.4 * voted;
   }
 
@@ -267,8 +286,8 @@
   function statusOf(p) {
     if (!p.joined) return 'Invite sent';
     const v = Object.keys(p.votes).length;
-    if (v >= PLACES.length) return 'All done ✓';
-    if (v > 0) return 'Voted ' + v + ' of ' + PLACES.length;
+    if (v >= allPlaces().length) return 'All done ✓';
+    if (v > 0) return 'Voted ' + v + ' of ' + allPlaces().length;
     if (p.avail.size) return 'Added ' + p.avail.size + ' free hours';
     return p === state.me ? 'Paint your free times' : 'Adding times…';
   }
@@ -292,7 +311,13 @@
       updatePeople();
       updateStepper();
       if (state.step === 'times') { updateAllCells(); renderBest(); }
-      if (state.step === 'places') { renderRanking(); updateCardFriends(); }
+      if (state.step === 'places') {
+        renderRanking(); updateCardFriends();
+        // A friend's new suggestion should appear in the deck without interrupting a swipe.
+        const shown = $$('#deck .card').map((c) => c.dataset.id).join(',');
+        const want = allPlaces().slice(state.deckIndex, state.deckIndex + 3).map((p) => p.id).reverse().join(',');
+        if (!dragActive && !voting && shown !== want) renderDeck();
+      }
       if (state.step === 'bloom') { renderPlanCard(); renderWaiting(); }
       checkMilestones();
     });
@@ -303,7 +328,7 @@
     if (step === 'home' || step === 'join') return true;
     if (step === 'times') return state.mode === 'demo' || !!state.session;
     if (step === 'places') return state.me.avail.size > 0;
-    if (step === 'bloom') return state.deckIndex >= PLACES.length;
+    if (step === 'bloom') return state.deckIndex >= allPlaces().length;
     return false;
   }
   function go(step, push) {
@@ -357,6 +382,7 @@
       bloom: 'Your plan · Bloom',
     }[state.step];
     if (state.step === 'home') bindHome();
+    $('#navGroups').hidden = !(state.step === 'home' && Object.keys(sessions()).length);
     if (state.step === 'join') bindJoin();
     if (state.step === 'times') bindTimes();
     if (state.step === 'places') bindPlaces();
@@ -379,9 +405,8 @@
     return '' +
       '<section class="hero">' +
         '<div>' +
-          '<p class="eyebrow">🌸 For friends, families & flatmates</p>' +
-          '<h1>Plans that <em>actually</em> happen.</h1>' +
-          '<p class="lede">Skip the 200-message group chat. Paint when you’re free, swipe on where to go, and watch your plan bloom.</p>' +
+          '<h1>Watch your plan <em>Bloom</em>.</h1>' +
+          '<p class="lede">Paint when you’re free, swipe on where to go. Plans that actually happen.</p>' +
           myGroupsHTML() +
           '<form class="start-card" id="startForm" novalidate>' +
             '<div class="field"><label for="planTitle">What’s the plan?</label>' +
@@ -405,7 +430,7 @@
         '</div>' +
       '</section>' +
       versusHTML() +
-      '<h2 class="section-title">Three steps. Zero arguments.</h2>' +
+      '<h2 class="section-title" id="how">Three steps. Zero arguments.</h2>' +
       '<ol class="how">' +
         '<li><span class="step-n" aria-hidden="true">1</span><span class="ico" aria-hidden="true">🖌️</span><h3>Paint your time</h3><p>Drag across the hours you’re free. The brighter a square, the more friends can make it — the ⭐ is your sweet spot.</p></li>' +
         '<li><span class="step-n" aria-hidden="true">2</span><span class="ico" aria-hidden="true">👆</span><h3>Swipe on places</h3><p>Love it, maybe, or pass. No debates, no “idk, you pick”. Step-free access is shown on every card.</p></li>' +
@@ -421,7 +446,7 @@
       ['S', '#11966A', 'idk you pick 😅'],
       ['M', '#E4477A', 'wait which day did we say'],
     ];
-    return '<section class="versus" aria-labelledby="versusTitle">' +
+    return '<section class="versus" id="versus" aria-labelledby="versusTitle">' +
       '<h2 class="section-title" id="versusTitle">Sound familiar?</h2>' +
       '<div class="versus-grid">' +
         '<figure class="vs-card before"><figcaption><span class="vs-tag">Before</span> The group chat</figcaption>' +
@@ -532,23 +557,27 @@
     });
     grid += '</div>';
 
-    return '<div class="layout"><section>' +
-      '<div class="page-head"><h1>When are you free?</h1>' +
-        '<p id="gridHelp">Drag across the hours that work for you. The brighter a square, the more friends are free — the ⭐ marks the sweet spot. ' +
+    return '<div class="page-top"><div class="page-head"><h1>When are you free?</h1>' +
+        '<p id="gridHelp">Drag across the hours that work for you. The brighter a square, the more friends are free. ' +
         '<span class="sr-only">Keyboard: arrow keys move, Space or Enter toggles an hour, Shift plus an arrow paints as you move.</span></p></div>' +
       (state.mode === 'live'
         ? '<div class="invite"><span aria-hidden="true">🔗</span><span class="grow">Invite friends to <strong>' + esc(state.title) + '</strong> <code>' + esc(inviteLink()) + '</code>' +
             '<small class="invite-note">Send the password separately — they’ll need it to join.</small></span>' +
             '<button type="button" class="btn small ghost" id="copyLink">Copy link</button></div>'
         : '<div class="invite"><span aria-hidden="true">🔗</span><span class="grow">Demo group <strong>' + esc(state.title) + '</strong> — <a href="#/" class="link-btn">create a real group</a> to invite friends.</span></div>') +
+      '</div>' +
+      '<div class="layout"><section>' +
       '<div class="panel">' +
         '<div class="grid-tools">' +
+          '<span class="tools-label">Quick fill</span>' +
           '<button type="button" class="chip-btn" data-fill="evenings">🌙 Evenings</button>' +
           '<button type="button" class="chip-btn" data-fill="weekend">☀️ Weekend</button>' +
           '<button type="button" class="chip-btn quiet" data-fill="clear">Clear mine</button>' +
-          '<span class="spacer"></span>' +
-          '<div class="legend" aria-hidden="true"><span>Nobody</span><span class="ramp"></span><span>Everyone</span>' +
-          '<span><span class="me-swatch"></span> You</span><span><span class="best-swatch"></span> Best</span></div>' +
+        '</div>' +
+        '<div class="legend" aria-hidden="true">' +
+          '<span class="lg-item"><span class="ramp"></span><span class="lg-ends"><span>Nobody free</span><span>Everyone free</span></span></span>' +
+          '<span class="lg-item"><span class="me-swatch"></span>Your hours</span>' +
+          '<span class="lg-item"><span class="best-swatch"></span>Best time</span>' +
         '</div>' +
         '<div class="grid-wrap">' + grid +
           (!state.me.avail.size && !state.coachDone.grid ? '<div class="coach" id="coach" aria-hidden="true"><span class="hand">👆</span><span>Drag down a column to paint when you’re free</span></div>' : '') +
@@ -757,9 +786,9 @@
 
   // ---------- Step 2: places ----------
   function placesHTML() {
-    return '<div class="layout"><section>' +
-      '<div class="page-head"><h1>Where should we go?</h1>' +
-        '<p>Swipe right if you’d love it, left to pass, up for maybe. There are no wrong answers — your friends are voting too.</p></div>' +
+    return '<div class="page-top"><div class="page-head"><h1>Where should we go?</h1>' +
+        '<p>Swipe right if you’d love it, left to pass, up for maybe. There are no wrong answers — your friends are voting too.</p></div></div>' +
+      '<div class="layout"><section>' +
       '<div class="places-layout">' +
         '<div class="deck-wrap">' +
           '<div class="deck" id="deck"></div>' +
@@ -770,8 +799,22 @@
           '</div>' +
           '<p class="kbd-hint">Keyboard: <kbd>←</kbd> pass · <kbd>↑</kbd> maybe · <kbd>→</kbd> love it</p>' +
         '</div>' +
-        '<div class="panel"><h2 style="font-size:22px">Group favourites</h2>' +
+        '<div class="places-side">' +
+        '<form class="panel suggest" id="suggestForm" novalidate>' +
+          '<h2 class="sub-title">Got another idea?</h2>' +
+          '<p class="suggest-sub">Add it to everyone’s deck — food, drinks, an activity, anything.</p>' +
+          '<div class="suggest-row">' +
+            '<label class="sr-only" for="sgName">Place or idea</label>' +
+            '<input id="sgName" maxlength="40" placeholder="e.g. Spicy noodle, bubble tea, rock climbing" autocomplete="off">' +
+            '<label class="sr-only" for="sgKind">Type</label>' +
+            '<select id="sgKind">' + Object.keys(KINDS).map((k) => '<option value="' + k + '">' + KINDS[k].emoji + ' ' + KINDS[k].label + '</option>').join('') + '</select>' +
+            '<button type="submit" class="btn small">＋ Add</button>' +
+          '</div>' +
+          '<p class="form-error" id="sgError" role="alert"></p>' +
+        '</form>' +
+        '<div class="panel"><h2 class="sub-title">Group favourites</h2>' +
           '<ol class="rank-list" id="rankList" aria-live="polite"></ol>' +
+        '</div>' +
         '</div>' +
       '</div>' +
       '<div class="actionbar"><button type="button" class="btn ghost small" id="undoVote">↶ Undo</button>' +
@@ -787,9 +830,12 @@
       '<span class="stamp yes" aria-hidden="true">LOVE IT</span><span class="stamp no" aria-hidden="true">PASS</span><span class="stamp maybe" aria-hidden="true">MAYBE</span>' +
       '<div class="card-art"><span aria-hidden="true">' + pl.emoji + '</span><span class="kind">' + esc(pl.kind) + '</span></div>' +
       '<div class="card-body"><h3>' + esc(pl.name) + '</h3>' +
-        '<div class="meta"><span>' + esc(pl.price) + '</span><span>' + esc(pl.dist) + '</span></div>' +
+        (pl.price || pl.dist ? '<div class="meta">' + [pl.price, pl.dist].filter(Boolean).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') +
         '<p class="blurb">' + esc(pl.blurb) + '</p>' +
-        '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' +
+        '<div class="meta-row">' +
+          (pl.tags.length ? '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' : '') +
+          '<a class="g-link" href="' + googleLink(pl) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Look it up on Google <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
+        '</div>' +
         (pl.outdoor ? '<div class="wx" data-wx hidden></div>' : '') +
         '<div class="card-friends" data-friends="' + pl.id + '"></div>' +
       '</div></article>';
@@ -798,7 +844,7 @@
   function renderDeck() {
     const deck = $('#deck');
     if (!deck) return;
-    const rest = PLACES.slice(state.deckIndex);
+    const rest = allPlaces().slice(state.deckIndex);
     $$('#voteBtns button').forEach((b) => { b.disabled = !rest.length; });
     if (!rest.length) {
       deck.innerHTML = '<div class="deck-done"><div class="big" aria-hidden="true">🌸</div><h3>All swiped!</h3><p class="empty">Check the group favourites, then see your plan bloom.</p></div>';
@@ -828,8 +874,9 @@
     let sx = 0, sy = 0, dx = 0, dy = 0, dragging = false;
     const yes = card.querySelector('.stamp.yes'), no = card.querySelector('.stamp.no'), maybe = card.querySelector('.stamp.maybe');
     card.addEventListener('pointerdown', (e) => {
-      if (e.button > 0) return;
+      if (e.button > 0 || e.target.closest('a')) return; // let links be clicked
       card.classList.remove('hint-wiggle');
+      dragActive = true;
       dragging = true; sx = e.clientX; sy = e.clientY; dx = dy = 0;
       card.setPointerCapture(e.pointerId);
       card.classList.add('dragging');
@@ -845,6 +892,7 @@
     const up = () => {
       if (!dragging) return;
       dragging = false;
+      dragActive = false;
       card.classList.remove('dragging');
       if (dx > 110) vote(1);
       else if (dx < -110) vote(-1);
@@ -856,10 +904,11 @@
   }
 
   let voting = false;
+  let dragActive = false;
   function vote(v) {
-    if (voting || state.deckIndex >= PLACES.length) return;
+    if (voting || state.deckIndex >= allPlaces().length) return;
     voting = true;
-    const pl = PLACES[state.deckIndex];
+    const pl = allPlaces()[state.deckIndex];
     const card = $('#deck .card[data-depth="0"]');
     state.me.votes[pl.id] = v;
     if (state.mode === 'live') saveSoon({ votes: Object.assign({}, state.me.votes) });
@@ -873,11 +922,11 @@
     }
     later('deck', () => {
       voting = false;
-      const nextIdx = PLACES.findIndex((p) => !(p.id in state.me.votes));
-      state.deckIndex = nextIdx === -1 ? PLACES.length : nextIdx;
+      const nextIdx = allPlaces().findIndex((p) => !(p.id in state.me.votes));
+      state.deckIndex = nextIdx === -1 ? allPlaces().length : nextIdx;
       renderDeck();
       refresh();
-      const next = PLACES[state.deckIndex];
+      const next = allPlaces()[state.deckIndex];
       announce(word + ' to ' + pl.name + '. ' + (next ? 'Next: ' + next.name + ', ' + next.kind + '.' : 'That was the last place.'));
       const top = $('#deck .card[data-depth="0"]');
       if (top && !(document.activeElement && document.activeElement.closest('#voteBtns'))) top.focus({ preventScroll: true });
@@ -886,8 +935,8 @@
 
   function undoVote() {
     if (voting) return;
-    const lastIdx = (state.deckIndex >= PLACES.length ? PLACES.length : state.deckIndex) - 1;
-    const pl = PLACES[lastIdx];
+    const lastIdx = (state.deckIndex >= allPlaces().length ? allPlaces().length : state.deckIndex) - 1;
+    const pl = allPlaces()[lastIdx];
     if (!pl || !(pl.id in state.me.votes)) return;
     delete state.me.votes[pl.id];
     if (state.mode === 'live') saveSoon({ votes: Object.assign({}, state.me.votes) });
@@ -897,6 +946,30 @@
     announce('Undone. ' + pl.name + ' is back on top.');
     const top = $('#deck .card[data-depth="0"]');
     if (top) top.focus({ preventScroll: true });
+  }
+
+  async function addSuggestion(e) {
+    e.preventDefault();
+    const input = $('#sgName'), err = $('#sgError');
+    const name = input.value.trim(), kind = $('#sgKind').value;
+    err.textContent = '';
+    if (!name) { err.textContent = 'Type a place or idea first.'; input.focus(); return; }
+    if (allPlaces().some((p) => p.name.toLowerCase() === name.toLowerCase())) { err.textContent = '“' + name + '” is already in the deck.'; return; }
+    if (state.mode === 'live') {
+      try {
+        const data = await api('POST', '/groups/' + encodeURIComponent(state.group.id) + '/places', { name: name, kind: kind });
+        applyState(data, false);
+      } catch (ex) { err.textContent = ex.message; return; }
+    } else {
+      state.custom.push({ id: 'p_demo' + Date.now(), name: name, kind: kind, addedBy: state.me.id });
+      const idx = allPlaces().findIndex((p) => !(p.id in state.me.votes));
+      state.deckIndex = idx === -1 ? allPlaces().length : idx;
+    }
+    input.value = '';
+    renderDeck();
+    refresh();
+    toast(null, '✨ Added “' + name + '” to everyone’s deck');
+    announce(name + ' added to the deck.');
   }
 
   function renderRanking() {
@@ -916,10 +989,10 @@
     const btn = $('#toBloom'), hint = $('#toBloomHint');
     if (btn) {
       const done = Object.keys(state.me.votes).length;
-      const left = PLACES.length - done;
+      const left = allPlaces().length - done;
       btn.disabled = left > 0;
-      hint.innerHTML = '<span class="ab-progress" aria-hidden="true"><i style="--w:' + Math.round(done / PLACES.length * 100) + '%"></i></span>' +
-        '<span>' + (left > 0 ? done + ' of ' + PLACES.length + ' swiped' + (left <= 2 ? ' — almost there!' : '') : '✓ All swiped — ready when you are') + '</span>';
+      hint.innerHTML = '<span class="ab-progress" aria-hidden="true"><i style="--w:' + Math.round(done / allPlaces().length * 100) + '%"></i></span>' +
+        '<span>' + (left > 0 ? done + ' of ' + allPlaces().length + ' swiped' + (left <= 2 ? ' — almost there!' : '') : '✓ All swiped — ready when you are') + '</span>';
       const undo = $('#undoVote');
       if (undo) undo.disabled = !done;
     }
@@ -934,6 +1007,7 @@
     });
     $('#toBloom').addEventListener('click', () => go('bloom'));
     $('#undoVote').addEventListener('click', undoVote);
+    $('#suggestForm').addEventListener('submit', addSuggestion);
     simulateTimes(); // in case someone jumps straight here
     simulateVotes();
   }
@@ -999,7 +1073,7 @@
     if (box.innerHTML !== html) box.innerHTML = html;
   }
   function waitingHTML() {
-    const waiting = state.friends.filter((f) => !f.avail.size || Object.keys(f.votes).length < PLACES.length);
+    const waiting = state.friends.filter((f) => !f.avail.size || Object.keys(f.votes).length < allPlaces().length);
     if (!waiting.length) return '';
     return '<div class="waiting"><p>' + avatarStack(waiting) + ' Waiting on <strong>' + esc(namesList(waiting)) + '</strong></p>' +
       (state.mode === 'live' ? '<button type="button" class="btn small ghost" id="nudgeBtn">💌 Copy a friendly nudge</button>' : '') + '</div>';
@@ -1030,7 +1104,7 @@
       card.innerHTML = '<div class="plan-rows"><p class="empty" style="padding:20px 0">Paint at least one free hour so Bloom can find a time. <a class="link-btn" href="#/times">Add your times</a></p></div>';
       return;
     }
-    const sig = [run.id, pl.id, run.who.map((p) => p.id).join(','), people().map((p) => p.id + ':' + p.avail.size).join(','), WEATHER.status, WEATHER.place].join('|');
+    const sig = [run.id, pl.id, pl.name, run.who.map((p) => p.id).join(','), people().map((p) => p.id + ':' + p.avail.size).join(','), WEATHER.status, WEATHER.place].join('|');
     if (card.dataset.sig === sig) return;
     card.dataset.sig = sig;
     const out = people().filter((p) => run.who.indexOf(p) === -1);
@@ -1041,7 +1115,8 @@
         '<div class="plan-row"><span class="ico" aria-hidden="true">🗓️</span><div><div class="k">When</div>' +
           '<div class="v">' + dateLong(run.d) + '</div><div class="sub">' + fmtHour(run.start) + ' – ' + fmtHour(run.end) + '</div></div></div>' +
         '<div class="plan-row"><span class="ico" aria-hidden="true">' + pl.emoji + '</span><div><div class="k">Where</div>' +
-          '<div class="v">' + esc(pl.name) + '</div><div class="sub">' + esc(pl.kind + ' · ' + pl.price + ' · ' + pl.dist + ' · ' + pl.tags.join(', ')) + '</div></div></div>' +
+          '<div class="v">' + esc(pl.name) + '</div><div class="sub">' + esc([pl.kind, pl.price, pl.dist].concat(pl.tags).filter(Boolean).join(' · ')) +
+          ' · <a href="' + googleLink(pl) + '" target="_blank" rel="noopener">Look it up on Google ↗</a></div></div></div>' +
         weatherRow(run, pl) +
         '<div class="plan-row"><span class="ico" aria-hidden="true">👯</span><div><div class="k">Who’s coming · ' + run.who.length + ' of ' + total() + '</div>' +
           '<div class="going">' +
@@ -1067,7 +1142,7 @@
     renderPlanCard();
     $('#waitingBox').addEventListener('click', (e) => {
       if (!e.target.closest('#nudgeBtn')) return;
-      const waiting = state.friends.filter((f) => !f.avail.size || Object.keys(f.votes).length < PLACES.length);
+      const waiting = state.friends.filter((f) => !f.avail.size || Object.keys(f.votes).length < allPlaces().length);
       copy('Hey ' + waiting.map((f) => f.name).join(' & ') + '! 🌸 We’re almost done planning “' + state.title + '” — tap to add your times and votes (takes 1 min): ' + inviteLink(),
         'Nudge copied — paste it in the group chat');
     });
@@ -1094,6 +1169,7 @@
     state.friends.forEach((f) => { f.avail.clear(); f.votes = {}; f.joined = false; });
     state.sim = { times: false, votes: false };
     state.deckIndex = 0;
+    state.custom = [];
     state.milestones = {};
     state.coachDone = { grid: false, deck: false };
     state.pickRun = state.pickPlace = null;
@@ -1145,15 +1221,17 @@
   }
   function buzz(pattern) {
     if (reduceMotion || !navigator.vibrate) return;
+    // Browsers only allow vibration after the person has tapped the page.
+    if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
     try { navigator.vibrate(pattern); } catch (e) { /* unsupported */ }
   }
 
   // ---------- Accessibility preferences ----------
-  const prefs = { big: false, counts: false, calm: false, contrast: false };
+  const prefs = { counts: false, calm: false, contrast: false };
   try { Object.assign(prefs, JSON.parse(store.get('bloom.prefs') || '{}')); } catch (e) { /* ignore */ }
   function applyPrefs() {
     const root = document.documentElement;
-    Object.keys(prefs).forEach((k) => root.classList.toggle('pref-' + k, !!prefs[k]));
+    ['counts', 'calm', 'contrast'].forEach((k) => root.classList.toggle('pref-' + k, !!prefs[k]));
     reduceMotion = motionMQ.matches || prefs.calm;
     $$('#a11yPanel input[data-pref]').forEach((i) => { i.checked = !!prefs[i.dataset.pref]; });
     if (state.step === 'times') updateAllCells();
@@ -1180,6 +1258,57 @@
     if (!a11yPanel.hidden && !e.target.closest('.a11y-wrap')) setA11yOpen(false);
   });
   applyPrefs();
+
+  // ---------- Page size (− 100% +) ----------
+  const ZOOM_MIN = 0.7, ZOOM_MAX = 1.5, ZOOM_STEP = 0.1;
+  let zoom = parseFloat(store.get('bloom.zoom')) || 1;
+  let zoomShown = zoom, zoomAnim = null;
+  function showZoom(z) {
+    document.documentElement.style.zoom = z === 1 ? '' : String(z);
+    $('#zoomReset').textContent = Math.round(z * 100) + '%';
+  }
+  function setZoom(target) {
+    zoom = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, target)) * 10) / 10;
+    store.set('bloom.zoom', String(zoom));
+    $('#zoomOut').disabled = zoom <= ZOOM_MIN;
+    $('#zoomIn').disabled = zoom >= ZOOM_MAX;
+    $('#zoomReset').setAttribute('aria-label', 'Page size ' + Math.round(zoom * 100) + '%. Click to reset');
+    announce('Page size ' + Math.round(zoom * 100) + '%');
+    cancelAnimationFrame(zoomAnim);
+    if (reduceMotion) { zoomShown = zoom; showZoom(zoom); return; }
+    // Ease smoothly to the new size instead of jumping.
+    const from = zoomShown, to = zoom, t0 = performance.now(), dur = 420;
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      zoomShown = from + (to - from) * e;
+      showZoom(k === 1 ? to : zoomShown);
+      if (k < 1) zoomAnim = requestAnimationFrame(step);
+    };
+    zoomAnim = requestAnimationFrame(step);
+  }
+  $('#zoomIn').addEventListener('click', () => setZoom(zoom + ZOOM_STEP));
+  $('#zoomOut').addEventListener('click', () => setZoom(zoom - ZOOM_STEP));
+  $('#zoomReset').addEventListener('click', () => setZoom(1));
+  showZoom(zoom);
+  $('#zoomOut').disabled = zoom <= ZOOM_MIN;
+  $('#zoomIn').disabled = zoom >= ZOOM_MAX;
+
+  // Home navigation bar
+  $('.home-nav').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-scroll]');
+    if (!b) return;
+    const doScroll = () => {
+      const el = document.getElementById(b.dataset.scroll);
+      if (el) el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+      if (b.dataset.focus) setTimeout(() => { const f = document.getElementById(b.dataset.focus); if (f) f.focus({ preventScroll: true }); }, reduceMotion ? 0 : 450);
+    };
+    if (state.step !== 'home') { go('home'); setTimeout(doScroll, 50); } else doScroll();
+  });
+  $('#navDemo').addEventListener('click', () => {
+    const t = $('#planTitle'), n = $('#myName');
+    startDemo((t && t.value.trim()) || 'Weekend hangout', (n && n.value.trim()) || state.me.name || 'You');
+    go('times');
+  });
 
   // ---------- Utilities ----------
   function downloadICS(run, pl) {
@@ -1278,6 +1407,7 @@
     saveSession(res.groupId, state.session);
     store.set('bloom.current', res.groupId);
     state.friends = [];
+    state.custom = [];
     state.me = { id: res.memberId, name: 'You', color: '#2F6FEB', avail: new Set(), votes: {}, joined: true };
     state.pickRun = state.pickPlace = null;
     state.milestones = {};
@@ -1296,6 +1426,7 @@
     state.friends = FRIENDS.map((f) => Object.assign({}, f, { avail: new Set(), votes: {}, joined: false }));
     state.sim = { times: false, votes: false };
     state.deckIndex = 0;
+    state.custom = [];
     state.milestones = {};
     state.coachDone = { grid: false, deck: false };
     state.pickRun = state.pickPlace = null;
@@ -1320,14 +1451,22 @@
       state.me = me;
     }
     state.friends = data.members.filter((m) => m.id !== data.me).map(toPerson);
+    const knownPlaces = new Set(state.custom.map((c) => c.id));
+    state.custom = data.places || [];
+    if (!first) {
+      state.custom.filter((c) => !knownPlaces.has(c.id) && c.addedBy !== state.me.id).forEach((c) => {
+        const who = state.friends.find((f) => f.id === c.addedBy);
+        toast(who || null, (who ? who.name : 'Someone') + ' suggested ' + c.name);
+      });
+    }
     if (!first) {
       state.friends.filter((f) => !known.has(f.id)).forEach((f) => {
         toast(f, f.name + ' joined ' + state.title);
         announce(f.name + ' joined the group.');
       });
     }
-    const firstUnvoted = PLACES.findIndex((p) => !(p.id in state.me.votes));
-    state.deckIndex = firstUnvoted === -1 ? PLACES.length : firstUnvoted;
+    const firstUnvoted = allPlaces().findIndex((p) => !(p.id in state.me.votes));
+    state.deckIndex = firstUnvoted === -1 ? allPlaces().length : firstUnvoted;
   }
 
   let saveTimer = null;

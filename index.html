@@ -20,7 +20,17 @@
       <span>Bloom</span>
     </a>
 
-    <nav aria-label="Plan steps">
+    <nav class="home-nav" aria-label="Main">
+      <ul>
+        <li><button type="button" class="nav-link" data-scroll="how">How it works</button></li>
+        <li><button type="button" class="nav-link" data-scroll="versus">Why Bloom</button></li>
+        <li><button type="button" class="nav-link" data-scroll="myGroupsTitle" id="navGroups" hidden>Your groups</button></li>
+        <li><button type="button" class="nav-link" id="navDemo">Try the demo</button></li>
+        <li><button type="button" class="btn small" data-scroll="startForm" data-focus="planTitle">Create a group</button></li>
+      </ul>
+    </nav>
+
+    <nav class="steps-nav" aria-label="Plan steps">
       <ol class="stepper" id="stepper">
         <li><button type="button" data-step="times"><span class="num">1</span><span class="lbl">When</span></button></li>
         <li><button type="button" data-step="places"><span class="num">2</span><span class="lbl">Where</span></button></li>
@@ -28,13 +38,19 @@
       </ol>
     </nav>
 
+    <div class="zoom" role="group" aria-label="Page size">
+      <button type="button" class="zoom-btn" id="zoomOut" aria-label="Make everything smaller">−</button>
+      <button type="button" class="zoom-val" id="zoomReset" aria-label="Page size 100%. Click to reset">100%</button>
+      <button type="button" class="zoom-btn" id="zoomIn" aria-label="Make everything bigger">+</button>
+    </div>
+
     <div class="a11y-wrap">
       <button type="button" class="icon-btn" id="a11yBtn" aria-expanded="false" aria-controls="a11yPanel" aria-label="Accessibility settings">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="4.5" r="2" fill="currentColor"/><path d="M4 8.5l8 1.5 8-1.5M12 10v5m0 0l-3.5 6M12 15l3.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <div class="a11y-panel" id="a11yPanel" role="group" aria-labelledby="a11yTitle" hidden>
         <h2 id="a11yTitle">Make Bloom work for you</h2>
-        <label class="pref"><input type="checkbox" data-pref="big"><span><strong>Bigger text</strong><small>Everything 15% larger</small></span></label>
+        <p class="pref-note">Tip: use <strong>− 100% +</strong> in the top bar to make everything bigger or smaller.</p>
         <label class="pref"><input type="checkbox" data-pref="counts"><span><strong>Numbers on the grid</strong><small>See how many are free without relying on colour</small></span></label>
         <label class="pref"><input type="checkbox" data-pref="calm"><span><strong>Calm mode</strong><small>Turn off animations and confetti</small></span></label>
         <label class="pref"><input type="checkbox" data-pref="contrast"><span><strong>High contrast</strong><small>Stronger text and borders</small></span></label>
