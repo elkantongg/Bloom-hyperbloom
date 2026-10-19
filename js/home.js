@@ -31,7 +31,7 @@ export function homeHTML() {
         heroMark() +
         '<div class="floating f1">👋<div>Let’s meet up soon!<small>Who’s in?</small></div></div>' +
         '<div class="floating f2">🗓️<div>When are you free?<small>Paint your hours</small></div></div>' +
-        '<div class="floating f3">✨<div>Everyone’s free!<small>Sat 3–6pm</small></div></div>' +
+        '<div class="floating f3">✨<div>Let’s do this!<small>Sat 3–6pm</small></div></div>' +
       '</div>' +
     '</section>' +
     versusHTML() +
