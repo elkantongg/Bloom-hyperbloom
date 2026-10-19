@@ -59,27 +59,20 @@ SLOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}@\d{1,2}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-# ---------- Place lookup (OpenStreetMap, free, no key) ----------
-# Used only to let people confirm *which* place they mean, e.g. which Din Tai Fung branch.
+# ---------- Free place search (no key, no sign-up) ----------
+# Photon (built on OpenStreetMap) gives search-as-you-type with typo tolerance.
+# Picking a result loads its OpenStreetMap details, plus a Wikimedia photo of that
+# exact place when one exists (otherwise the card shows a map pinned on it).
 UA = "Bloom-hackathon-prototype/1.0 (https://github.com/elkantongg/hyperbloom)"
 REGION = os.environ.get("BLOOM_REGION", "sg")
-LOOKUP_CACHE = {}          # (query, kind) -> (time, results)
+SG_BBOX = os.environ.get("BLOOM_BBOX", "103.59,1.15,104.10,1.48")  # minLon,minLat,maxLon,maxLat
+PHOTON = os.environ.get("BLOOM_PHOTON", "https://photon.komoot.io/api/")
+LOOKUP_CACHE = {}          # query -> (time, results)
 LOOKUP_LOCK = threading.Lock()
 LAST_OSM_CALL = [0.0]      # OpenStreetMap asks for at most 1 request per second
-LOOKUP_HITS = {}           # ip -> [timestamps], simple rate limit
-
-# Which map categories count for each type the person picked.
-KIND_MATCH = {
-    "food": {"amenity": {"restaurant", "fast_food", "food_court", "cafe", "ice_cream"},
-             "shop": {"bakery", "pastry", "confectionery", "deli"}},
-    "drinks": {"amenity": {"cafe", "bar", "pub", "biergarten"},
-               "shop": {"beverages", "tea", "coffee", "alcohol", "wine"}},
-    # Activities include outdoor things too: parks, beaches, trails, zoos...
-    "activity": {"amenity": {"cinema", "theatre", "arts_centre", "karaoke_box", "nightclub", "events_venue",
-                             "community_centre", "casino"},
-                 "leisure": None, "tourism": None, "natural": None, "boundary": {"national_park"}},
-}
-
+LOOKUP_HITS = {}           # (ip, bucket) -> [timestamps], simple rate limit
+OSM_ID = re.compile(r"osm:([NWR])(\d{1,15})")
+SKIP_KEYS = {"highway", "railway", "power", "waterway", "route", "public_transport", "landuse"}
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 OSM_DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
@@ -154,70 +147,104 @@ def wikidata_photos(ids):
     return {i: PHOTO_CACHE.get(i, "") for i in ids if i}
 
 
-def matches_kind(row, kind):
-    rules = KIND_MATCH.get(kind)
-    if not rules:
-        return True  # "Something else" shows everything
-    allowed = rules.get(row.get("category"), False)
-    return allowed is None or (allowed is not False and row.get("type") in allowed)
-
-
-def osm_lookup(query, kind):
-    key = (query.casefold(), kind)
-    hit = LOOKUP_CACHE.get(key)
-    if hit and time.time() - hit[0] < 86400:
-        return hit[1]
+def osm_get(url):
+    """GET from OpenStreetMap services, at most one request per second (their usage policy)."""
     with LOOKUP_LOCK:
         wait = 1.1 - (time.time() - LAST_OSM_CALL[0])
         if wait > 0:
             time.sleep(wait)
         LAST_OSM_CALL[0] = time.time()
-    qs = urllib.parse.urlencode({"q": query, "countrycodes": REGION, "format": "jsonv2",
-                                 "limit": 15, "addressdetails": 1, "extratags": 1})
-    req = urllib.request.Request("https://nominatim.openstreetmap.org/search?" + qs, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=6) as r:
-        rows = json.loads(r.read())
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=6) as r:
+        return json.loads(r.read())
+
+
+def maps_url(name, address):
+    """Google Maps link for a place (official public URL format, no key needed)."""
+    q = ", ".join(x for x in (name, address) if x)
+    return "https://www.google.com/maps/search/?api=1&query=" + urllib.parse.quote(q)
+
+
+def osm_kind(category, value):
+    if value in ("restaurant", "fast_food", "food_court", "ice_cream", "bakery", "deli"):
+        return "food"
+    if value in ("cafe", "bar", "pub", "biergarten", "tea", "coffee", "beverages"):
+        return "drinks"
+    return "activity"
+
+
+def photon_autocomplete(text):
+    """Places matching what's typed so far (typo-tolerant), within Singapore."""
+    key = text.casefold()
+    hit = LOOKUP_CACHE.get(key)
+    if hit and time.time() - hit[0] < 3600:
+        return hit[1]
+    qs = urllib.parse.urlencode({"q": text, "limit": 12, "lang": "en", "bbox": SG_BBOX,
+                                 "lat": 1.3521, "lon": 103.8198})
+    with urllib.request.urlopen(urllib.request.Request(PHOTON + "?" + qs, headers={"User-Agent": UA}), timeout=6) as r:
+        features = json.loads(r.read()).get("features") or []
     out, seen = [], set()
-    for row in rows:
-        if not matches_kind(row, kind):
+    for f in features:
+        p = f.get("properties") or {}
+        if not p.get("name") or p.get("osm_key") in SKIP_KEYS or not p.get("osm_id"):
             continue
-        a = row.get("address") or {}
-        street = " ".join(x for x in (a.get("house_number"), a.get("road")) if x)
-        area = a.get("suburb") or a.get("city_district") or a.get("neighbourhood") or a.get("quarter")
-        e = row.get("extratags") or {}
-        cuisine = (e.get("cuisine") or "").split(";")[0].replace("_", " ").strip()
-        kind_label = (row.get("type") or "").replace("_", " ")
-        if kind_label in ("yes", "no"):  # e.g. building=yes says nothing useful
-            kind_label = (row.get("category") or "").replace("_", " ")
-        out.append({
-            "name": row.get("name") or (row.get("display_name") or "").split(",")[0],
-            "area": area,
-            "address": ", ".join(x for x in (street, area, a.get("postcode")) if x) or None,
-            "category": (cuisine.title() + " " + kind_label).strip() if cuisine else kind_label.capitalize() or None,
-            "price": price_text(e),
-            "hours": osm_hours_to_week(e.get("opening_hours")),
-            "hoursText": e.get("opening_hours"),
-            "website": e.get("website") or e.get("contact:website") or e.get("url"),
-            "phone": e.get("phone") or e.get("contact:phone"),
-            # Only a photo of THIS place counts (not the brand's photo of some other branch).
-            "wikidata": e.get("wikidata"),
-            "lat": round(float(row["lat"]), 6) if row.get("lat") else None,
-            "lon": round(float(row["lon"]), 6) if row.get("lon") else None,
-        })
-        # The same place is often mapped twice (e.g. a zoo and its entrance): keep the first.
-        key = (out[-1]["name"].casefold(), (out[-1]["area"] or "").casefold())
-        if key in seen:
-            out.pop()
+        street = " ".join(x for x in (p.get("housenumber"), p.get("street")) if x)
+        area = p.get("district") or p.get("locality") or p.get("city")
+        secondary = ", ".join(x for x in (street, area) if x and x != p["name"])
+        dup = (p["name"].casefold(), secondary.casefold())
+        if dup in seen:
             continue
-        seen.add(key)
-        if len(out) == 5:
+        seen.add(dup)
+        out.append({"placeId": f"osm:{p.get('osm_type')}{p['osm_id']}", "main": p["name"],
+                    "secondary": secondary or (p.get("osm_value") or "").replace("_", " ").capitalize()})
+        if len(out) == 6:
             break
-    photos = wikidata_photos([r["wikidata"] for r in out])
-    for r in out:
-        r["photo"] = photos.get(r.pop("wikidata"), "") or None
     LOOKUP_CACHE[key] = (time.time(), out)
-    if len(LOOKUP_CACHE) > 2000:
+    if len(LOOKUP_CACHE) > 3000:
         LOOKUP_CACHE.pop(next(iter(LOOKUP_CACHE)))
+    return out
+
+
+def osm_details(place_id):
+    """Everything OpenStreetMap knows about one place, ready for a card."""
+    m = OSM_ID.fullmatch(place_id)
+    if not m:
+        return None
+    hit = LOOKUP_CACHE.get(place_id)
+    if hit and time.time() - hit[0] < 86400:
+        return hit[1]
+    qs = urllib.parse.urlencode({"osm_ids": m.group(1) + m.group(2), "format": "jsonv2",
+                                 "extratags": 1, "addressdetails": 1})
+    rows = osm_get("https://nominatim.openstreetmap.org/lookup?" + qs)
+    if not rows:
+        return None
+    row = rows[0]
+    a = row.get("address") or {}
+    e = row.get("extratags") or {}
+    name = row.get("name") or (row.get("display_name") or "").split(",")[0]
+    street = " ".join(x for x in (a.get("house_number"), a.get("road")) if x)
+    area = a.get("suburb") or a.get("city_district") or a.get("neighbourhood") or a.get("quarter")
+    address = ", ".join(x for x in (street, area, a.get("postcode")) if x) or None
+    cuisine = (e.get("cuisine") or "").split(";")[0].replace("_", " ").strip()
+    value = (row.get("type") or "").replace("_", " ")
+    if value in ("yes", "no"):  # e.g. building=yes says nothing useful
+        value = (row.get("category") or "").replace("_", " ")
+    photo = wikidata_photos([e.get("wikidata")]).get(e.get("wikidata"), "") if e.get("wikidata") else ""
+    out = {
+        "source": "osm", "placeId": place_id, "name": name, "area": area, "address": address,
+        "category": (cuisine.title() + " " + value).strip() if cuisine else value.capitalize() or None,
+        "kind": osm_kind(row.get("category"), row.get("type")),
+        "price": price_text(e),
+        "hours": osm_hours_to_week(e.get("opening_hours")), "hoursText": e.get("opening_hours"),
+        "website": e.get("website") or e.get("contact:website") or e.get("url"),
+        "phone": e.get("phone") or e.get("contact:phone"),
+        "stepFree": {"yes": True, "no": False}.get(e.get("wheelchair")),
+        # Only a photo of THIS place (its own Wikidata entry), never a brand's or a generic one.
+        "photo": photo or None,
+        "lat": round(float(row["lat"]), 6) if row.get("lat") else None,
+        "lon": round(float(row["lon"]), 6) if row.get("lon") else None,
+        "mapsUrl": maps_url(name, address),
+    }
+    LOOKUP_CACHE[place_id] = (time.time(), out)
     return out
 
 
@@ -350,6 +377,10 @@ def clean_details(d):
         return v if isinstance(v, bool) else None
     def num(v, hi):
         return v if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= hi else None
+    if d.get("source") == "osm":
+        out.update({"source": "osm", "name": s(d.get("name"), 80), "mapsUrl": url(d.get("mapsUrl")),
+                    "stepFree": b(d.get("stepFree")),
+                    "placeId": d.get("placeId") if isinstance(d.get("placeId"), str) and OSM_ID.fullmatch(d["placeId"]) else None})
     if d.get("source") == "google":
         out.update({
             "source": "google",
@@ -531,12 +562,10 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         q = parse_qs(parsed.query)
         arg = lambda k: q.get(k, [""])[0]
-        if path == "/api/lookup":
-            return self.lookup(arg("q"), arg("kind"))
         if path == "/api/config":
-            return self.send_json(200, {"googlePlaces": bool(GOOGLE_KEY)})
+            return self.send_json(200, {"placeSearch": "google" if GOOGLE_KEY else "free"})
         if path in ("/api/places/autocomplete", "/api/places/details", "/api/places/photo"):
-            return self.google_route(path.rsplit("/", 1)[1], arg)
+            return self.places_route(path.rsplit("/", 1)[1], arg)
         if path.startswith("/api/"):
             return self.api("GET", path)
         if path in STATIC:
@@ -686,10 +715,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = group_state(gid, member_id)
         self.send_json(200, payload)
 
-    def google_route(self, which, arg):
-        if not GOOGLE_KEY:
-            return self.send_json(404, {"error": "Google Places isn't set up on this server"})
+    def places_route(self, which, arg):
+        """Place search: Google Places if a key is set, otherwise free (Photon + OpenStreetMap)."""
         ip = self.client_address[0]
+        if not GOOGLE_KEY:
+            return self.free_places_route(which, arg, ip)
         session = arg("session") if SESSION.fullmatch(arg("session") or "") else None
         try:
             if which == "autocomplete":
@@ -723,31 +753,26 @@ class Handler(BaseHTTPRequestHandler):
             print(f"Google Places request failed: {e}")
             self.send_json(502, {"error": "Couldn't reach Google right now"})
 
-    def lookup(self, query, kind):
-        query = query.strip()[:80]
-        if len(query) < 2:
-            return self.send_json(400, {"error": "Type at least 2 characters"})
-        ip = self.client_address[0]
-        recent = [t for t in LOOKUP_HITS.get(ip, []) if t > time.time() - 60]
-        if len(recent) >= 20:
-            return self.send_json(429, {"error": "Too many searches — try again in a minute"})
-        LOOKUP_HITS[ip] = recent + [time.time()]
-        if len(LOOKUP_HITS) > 5000:
-            LOOKUP_HITS.clear()
-        kind = kind if kind in KINDS else "other"
-        results, used = [], query
+    def free_places_route(self, which, arg, ip):
         try:
-            results = osm_lookup(query, kind)
-            # Nothing found? Mall or area names often aren't in the map data
-            # ("hot hideout cineleisure"), so retry with fewer words.
-            words = query.split()
-            while not results and len(words) > 2:
-                words = words[:-1]
-                used = " ".join(words)
-                results = osm_lookup(used, kind)
+            if which == "autocomplete":
+                text = arg("q").strip()[:80]
+                if len(text) < 2:
+                    return self.send_json(200, {"results": []})
+                if not rate_ok(ip, "ac", 120):
+                    return self.send_json(429, {"error": "Too many searches — try again in a minute"})
+                return self.send_json(200, {"results": photon_autocomplete(text)})
+            if which == "details":
+                if not OSM_ID.fullmatch(arg("id") or ""):
+                    return self.send_json(400, {"error": "Unknown place"})
+                if not rate_ok(ip, "details", 30):
+                    return self.send_json(429, {"error": "Too many lookups — try again in a minute"})
+                place = osm_details(arg("id"))
+                return self.send_json(200, {"place": place}) if place else self.send_json(404, {"error": "Couldn’t find that place"})
+            return self.send_json(404, {"error": "No photo"})
         except (urllib.error.URLError, ValueError, TimeoutError, OSError) as e:
-            print(f"Place lookup failed for {query!r}: {e}")
-        self.send_json(200, {"results": results, "approximate": bool(results) and used != query, "used": used})
+            print(f"Free place search failed: {e}")
+            self.send_json(502, {"error": "Search isn’t reachable right now — you can still add it as typed"})
 
     def add_place(self, gid):
         body = self.read_body()
@@ -775,8 +800,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Bloom is running at http://localhost:{PORT}  (database: {os.path.relpath(DB_PATH, ROOT)})")
-    print("Place search: " + ("Google Places (autocomplete, real photos)" if GOOGLE_KEY
-          else "OpenStreetMap (free). Add GOOGLE_PLACES_API_KEY to .env for Google Maps-style search."))
+    print("Place search: " + ("Google Places" if GOOGLE_KEY else "free (Photon + OpenStreetMap, no key needed)"))
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

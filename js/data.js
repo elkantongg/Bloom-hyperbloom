@@ -36,7 +36,7 @@ export function customPlace(c) {
     photoUrl: g && d.photoRef ? '/api/places/photo?name=' + encodeURIComponent(d.photoRef) : '',
     photoCredit: g && d.photoRef ? 'Photo: ' + (d.photoBy || 'Google') + ' · Google' : '',
     photoCreditUrl: g && d.photoRef ? d.photoByUrl || d.mapsUrl || '' : '',
-    link: g && d.mapsUrl ? d.mapsUrl : '',
+    link: d && d.mapsUrl ? d.mapsUrl : '',
     map: d && typeof d.lat === 'number' && typeof d.lon === 'number' ? { lat: d.lat, lon: d.lon } : null,
     hoursToday: d ? (todaysHours(d.hours) || d.hoursText || '') : '',
     website: d && /^https?:\/\//.test(d.website || '') ? d.website : '',

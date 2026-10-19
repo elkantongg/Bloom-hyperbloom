@@ -2,7 +2,7 @@
 // a preview of the exact place with its real photo, then "Add to deck".
 // Only used when the server has a Google Places key; otherwise places.js uses the free map search.
 import { $, esc } from './util.js';
-import { todaysHours } from './data.js';
+import { commonsImage, todaysHours } from './data.js';
 import { announce } from './ui.js';
 import { saveSuggestion } from './places.js';
 
@@ -132,7 +132,8 @@ function renderPreview() {
   ].filter(Boolean);
   const today = todaysHours(p.hours);
   box.innerHTML =
-    (p.photoRef ? '<img class="gs-photo" src="/api/places/photo?name=' + encodeURIComponent(p.photoRef) + '" alt="Photo of ' + esc(p.name || '') + '">' : '') +
+    (p.photoRef ? '<img class="gs-photo" src="/api/places/photo?name=' + encodeURIComponent(p.photoRef) + '" alt="Photo of ' + esc(p.name || '') + '">'
+      : p.photo ? '<img class="gs-photo" src="' + esc(commonsImage(p.photo)) + '" alt="Photo of ' + esc(p.name || '') + '">' : '') +
     '<div class="gs-info"><strong>' + esc(p.name || '') + '</strong>' +
       (facts.length ? '<span>' + esc(facts.join(' · ')) + '</span>' : '') +
       (p.address ? '<span>' + esc(p.address) + '</span>' : '') +
@@ -143,7 +144,9 @@ function renderPreview() {
   const img = box.querySelector('.gs-photo');
   if (img) img.addEventListener('error', () => img.remove());
   $('#gsAdd').addEventListener('click', async () => {
-    await saveSuggestion(p.name || $('#gsInput').value.trim(), p.kind || 'activity', null, p);
+    // Free results can share a name across branches, so add the area: "Din Tai Fung (Tampines)".
+    const label = p.source === 'osm' && p.area ? p.name + ' (' + p.area + ')' : p.name;
+    await saveSuggestion(label || $('#gsInput').value.trim(), p.kind || 'activity', null, p);
     reset();
   });
   $('#gsCancel').addEventListener('click', reset);

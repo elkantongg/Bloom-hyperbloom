@@ -21,7 +21,7 @@ export function boot() {
   loadWeather();
   // Does the server have Google Places? Then "Got another idea?" becomes a Maps-style search.
   fetch('/api/config').then((r) => r.json()).then((c) => {
-    state.googlePlaces = !!c.googlePlaces;
+    state.googlePlaces = !!c.placeSearch; // 'google' or 'free': both use the Maps-style search
     if (state.googlePlaces && state.step === 'places') render();
   }).catch(() => { /* static hosting or offline: keep the free search */ });
   resumeLive().then(() => route(false));
