@@ -10,8 +10,8 @@ export function homeHTML() {
   return '' +
     '<section class="hero">' +
       '<div>' +
-        '<h1>Watch your plan <em>Bloom</em></h1>' +
-        '<p class="lede">Paint when you’re free, swipe on where to go.</p>' +
+        '<h1>Make room for <em>Bloom</em></h1>' +
+        '<p class="lede">Don’t leave your plans in the bud.</p>' +
         myGroupsHTML() +
         '<form class="start-card" id="startForm" novalidate>' +
           '<div class="field"><label for="planTitle">What’s the plan?</label>' +

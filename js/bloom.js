@@ -79,6 +79,20 @@ export function weatherRow(run, pl) {
     '<button type="button" class="link-btn" id="useLoc">Use my location</button> · data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></div></div></div>';
 }
 
+// The message people paste into the group chat once the plan is set.
+export function inviteText(run, pl) {
+  const out = people().filter((p) => run.who.indexOf(p) === -1 && p.avail.size);
+  const lines = [
+    '🌸 ' + state.title + ' — it’s a plan!',
+    '🗓️ ' + dateLong(run.d) + ', ' + fmtHour(run.start) + '–' + fmtHour(run.end),
+    '📍 ' + [pl.name, pl.dist].filter(Boolean).join(' · '),
+    '🔗 ' + googleLink(pl),
+    '👯 ' + run.who.map((p) => p.name).join(', ') + (out.length ? ' (' + out.map((p) => p.name).join(', ') + ' can’t make it)' : ''),
+  ];
+  if (state.mode === 'live') lines.push('Plan with us on Bloom: ' + inviteLink());
+  return lines.join('\n');
+}
+
 export function renderPlanCard() {
   const run = computeRuns().find((r) => r.id === state.pickRun) || chosenRun();
   const pl = chosenPlace();
@@ -118,9 +132,7 @@ export function renderPlanCard() {
     '</div>';
   $('#addCal').addEventListener('click', () => downloadICS(run, pl));
   $('#useLoc').addEventListener('click', useMyLocation);
-  $('#copyInvite').addEventListener('click', () => copy(
-    '🌸 ' + state.title + '\n🗓️ ' + dateLong(run.d) + ', ' + fmtHour(run.start) + '–' + fmtHour(run.end) +
-    '\n📍 ' + pl.name + ' (' + pl.dist + ')\n👯 ' + run.who.map((p) => p.name).join(', ') + '\nPlanned with Bloom', 'Invite copied — paste it in the group chat'));
+  $('#copyInvite').addEventListener('click', () => copy(inviteText(run, pl), 'Invite copied — paste it in the group chat'));
   $('#restart').addEventListener('click', restart);
 }
 

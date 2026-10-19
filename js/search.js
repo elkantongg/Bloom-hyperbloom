@@ -21,7 +21,7 @@ const kind = () => ($('#gsKind') || {}).value || 'food';
 export function searchHTML() {
   return '<div class="panel suggest" id="gSearch">' +
     '<h2 class="sub-title">Got another idea?</h2>' +
-    '<p class="suggest-sub">Pick a type, then search any place like on Google Maps — typos are fine.</p>' +
+    '<p class="suggest-sub">Pick a type, search it, add it.</p>' +
     '<div class="gs-row">' +
       '<label class="sr-only" for="gsKind">Type of place</label>' +
       '<select id="gsKind">' + Object.keys(KINDS).map((k) => '<option value="' + k + '">' + KINDS[k].emoji + ' ' + KINDS[k].label + '</option>').join('') + '</select>' +
@@ -200,6 +200,7 @@ function renderPreview() {
       (facts.length ? '<span>' + esc(facts.join(' · ')) + '</span>' : '') +
       (p.address ? '<span>' + esc(p.address) + '</span>' : '') +
       (p.description ? '<span>' + esc(p.description) + '</span>' : '') +
+      (p.partial ? '<span class="gs-partial">This site doesn’t let apps read it, so we guessed the name from the link — check it, and add details later with ✏️ Edit.</span>' : '') +
       (today ? '<span>🕒 Today: ' + esc(today) + '</span>' : '') +
     '</div>' +
     '<div class="gs-actions"><button type="button" class="btn small" id="gsAdd">＋ Add to deck</button>' +

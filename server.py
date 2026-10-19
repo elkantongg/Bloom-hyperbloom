@@ -350,28 +350,92 @@ class _Meta(HTMLParser):
             self.title += data
 
 
+LINK_UA = "Mozilla/5.0 (compatible; BloomLinkPreview/1.0; +https://github.com/elkantongg/hyperbloom)"
+GMAPS_PLACE = re.compile(r"/maps/place/([^/?]+)")
+GMAPS_AT = re.compile(r"@(-?\d+\.\d+),(-?\d+\.\d+)")
+
+
+def host_name(url):
+    return (urllib.parse.urlparse(url).hostname or "").removeprefix("www.")
+
+
+def slug_name(url):
+    """'https://www.klook.com/activity/1593-laser-tag-singapore/' -> 'Laser Tag Singapore'."""
+    path = urllib.parse.urlparse(url).path
+    if "-Reviews-" in path:  # TripAdvisor: ...-Reviews-Laser_Quest-Singapore.html
+        path = path.split("-Reviews-", 1)[1]
+    parts = [p for p in path.split("/") if p]
+    for p in reversed(parts):
+        words = re.sub(r"[-_+]+", " ", urllib.parse.unquote(p)).split()
+        words = [w for w in re.sub(r"\.html?$", "", " ".join(words)).split()
+                 if not re.fullmatch(r"[a-z]?\d+|[a-z]{2}(-[a-z]{2})?|html?|index|en", w, re.I)]
+        if len(" ".join(words)) >= 3:
+            return " ".join(w if w.isupper() else w.capitalize() for w in words)[:80]
+    return host_name(url)
+
+
+def google_maps_link(url):
+    """Google Maps links carry the place name and position in the URL itself."""
+    u = urllib.parse.urlparse(url)
+    if not (u.hostname or "").endswith(("google.com", "google.com.sg")) or "/maps" not in u.path:
+        return None
+    m = GMAPS_PLACE.search(u.path)
+    name = urllib.parse.unquote_plus(m.group(1)) if m else (urllib.parse.parse_qs(u.query).get("q") or [""])[0]
+    at = GMAPS_AT.search(url)
+    return {"source": "link", "name": name[:80] or "Place on Google Maps", "description": None,
+            "siteName": "Google Maps", "image": None, "website": url,
+            "lat": float(at.group(1)) if at else None, "lon": float(at.group(2)) if at else None}
+
+
+GENERIC = re.compile(r"^(home|homepage|welcome|official (web)?site|index)$", re.I)
+
+
+def nice_title(title, site):
+    """'Home - Superbowl' -> 'Superbowl'; 'Name (@handle) • Instagram photos and videos' -> 'Name'."""
+    t = re.sub(r"\s*[•|·]\s*Instagram.*$", "", title or "").strip()
+    handle = re.search(r"\(@([\w.]+)\)", t)
+    t = re.sub(r"\s*\(@[\w.]+\)\s*", " ", t).strip()
+    parts = [p.strip() for p in re.split(r"\s[|\-–—·•:]\s", t) if p.strip()]
+    parts = [p for p in parts if not GENERIC.match(p)] or parts
+    best = parts[0] if parts else ""
+    return best or (handle.group(1) if handle else "") or site or ""
+
+
 def link_preview(url):
+    """Build a card from a link. Never fails on a normal public link: if the site
+    blocks robots (Klook, TripAdvisor...), the name comes from the link's own words
+    and people can edit it before adding."""
     opener = urllib.request.build_opener(_NoRedirect)
-    for _ in range(4):
+    original = url
+    fallback = {"source": "link", "name": slug_name(url), "description": None, "siteName": host_name(url),
+                "image": None, "website": url, "partial": True}
+    for _ in range(5):
         u = urllib.parse.urlparse(url)
         if u.scheme not in ("http", "https") or not u.hostname or not public_host(u.hostname):
             raise ApiError(400, "That link can't be opened. Use a normal public website link.")
-        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html"})
+        gm = google_maps_link(url)
+        if gm:
+            gm["website"] = original  # keep the link the person shared
+            return gm
+        req = urllib.request.Request(url, headers={"User-Agent": LINK_UA, "Accept": "text/html",
+                                                   "Accept-Language": "en-SG,en;q=0.9"})
         try:
             resp = opener.open(req, timeout=6)
         except urllib.error.HTTPError as e:
             if e.code in (301, 302, 303, 307, 308) and e.headers.get("Location"):
                 url = urllib.parse.urljoin(url, e.headers["Location"])
                 continue
-            raise ApiError(502, "That page didn't load. You can still add it with the link.")
+            return fallback  # the site blocked us; use the link's own words
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return fallback
         with resp:
             if "html" not in (resp.headers.get("Content-Type") or ""):
-                raise ApiError(400, "That link isn't a web page.")
+                return fallback
             body = resp.read(LINK_MAX_BYTES).decode(resp.headers.get_content_charset() or "utf-8", "replace")
             final = resp.geturl()
         break
     else:
-        raise ApiError(400, "That link redirects too many times.")
+        return fallback
     parser = _Meta()
     try:
         parser.feed(body)
@@ -383,11 +447,12 @@ def link_preview(url):
     image = urllib.parse.urljoin(final, image) if image else None
     return {
         "source": "link",
-        "name": clean(m.get("og:title") or m.get("twitter:title") or parser.title, 80) or urllib.parse.urlparse(final).hostname,
+        "name": nice_title(clean(m.get("og:title") or m.get("twitter:title") or parser.title, 120),
+                           clean(m.get("og:site_name"), 60))[:80] or slug_name(original),
         "description": clean(m.get("og:description") or m.get("description") or m.get("twitter:description"), 200),
         "siteName": clean(m.get("og:site_name"), 60) or urllib.parse.urlparse(final).hostname,
         "image": image if image and image.startswith("https://") else None,
-        "website": final,
+        "website": original,
     }
 
 
@@ -524,6 +589,8 @@ def clean_details(d):
         return v if isinstance(v, bool) else None
     def num(v, hi):
         return v if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= hi else None
+    if d.get("source") == "manual":
+        out.update({"source": "manual", "description": s(d.get("description"), 200)})
     if d.get("source") == "link":
         out.update({"source": "link", "name": s(d.get("name"), 80), "description": s(d.get("description"), 200),
                     "siteName": s(d.get("siteName"), 60), "website": url(d.get("website")),
@@ -784,6 +851,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.update_me(gid)
                 if method == "POST" and rest == ["places"]:
                     return self.add_place(gid)
+                if method == "PUT" and len(rest) == 2 and rest[0] == "places":
+                    return self.edit_place(gid, rest[1])
             raise ApiError(404, "Not found")
         except ApiError as e:
             self.send_json(e.status, {"error": e.message})
@@ -959,6 +1028,50 @@ class Handler(BaseHTTPRequestHandler):
         except (urllib.error.URLError, ValueError, TimeoutError, OSError) as e:
             print(f"Free place search failed: {e}")
             self.send_json(502, {"error": "Search isn’t reachable right now — you can still add it as typed"})
+
+    def edit_place(self, gid, pid):
+        """The person who suggested a place (or the host) can fix its name, type and details."""
+        if not rate_ok(self.client_address[0], "editplace", 30):
+            raise ApiError(429, "Slow down a little — try again in a minute")
+        body = self.read_body()
+        name = text(body, "name", 1, 40)
+        kind = body.get("kind")
+        if kind not in KINDS:
+            raise ApiError(400, "Pick a type: food, drinks, activity or something else")
+        e = body.get("edits") if isinstance(body.get("edits"), dict) else {}
+        with DB_LOCK:
+            member_id = self.auth(gid)
+            row = DB.execute("SELECT added_by, details FROM places WHERE id=? AND group_id=?", (pid, gid)).fetchone()
+            if not row:
+                raise ApiError(404, "That idea isn't in this group any more")
+            is_host = DB.execute("SELECT is_host FROM members WHERE id=?", (member_id,)).fetchone()[0]
+            if row["added_by"] != member_id and not is_host:
+                raise ApiError(403, "Only the person who suggested this (or the host) can edit it")
+            if DB.execute("SELECT 1 FROM places WHERE group_id=? AND id<>? AND lower(name)=lower(?)", (gid, pid, name)).fetchone():
+                raise ApiError(409, f"“{name}” is already in the deck")
+            details = json.loads(row["details"]) if row["details"] else {"source": "manual"}
+            def s(v, n):
+                return v.strip()[:n] if isinstance(v, str) else None
+            if "category" in e:
+                details["category"] = s(e["category"], 60) or None
+            if "price" in e:
+                details["price"] = e["price"] if e["price"] in ("Free", "$", "$$", "$$$", "$$$$") else None
+            if "address" in e:
+                details["address"] = s(e["address"], 200) or None
+            if "hoursText" in e:
+                details["hoursText"] = s(e["hoursText"], 120) or None
+                details["hours"] = []  # the typed hours replace the map's
+            if "description" in e:
+                details["description"] = s(e["description"], 200) or None
+            if "website" in e:
+                w = s(e["website"], 500) or ""
+                if w and not re.match(r"https?://[^\s\"'<>]+$", w):
+                    w = "https://" + w if re.match(r"[\w.-]+\.[a-z]{2,}([/?#][^\s\"'<>]*)?$", w, re.I) else ""
+                details["website"] = w or None
+            DB.execute("UPDATE places SET name=?, kind=?, details=? WHERE id=?", (name, kind, json.dumps(details), pid))
+            DB.commit()
+            payload = group_state(gid, member_id)
+        self.send_json(200, payload)
 
     def add_place(self, gid):
         if not rate_ok(self.client_address[0], "addplace", 30):

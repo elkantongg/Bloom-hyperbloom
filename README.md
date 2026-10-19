@@ -91,7 +91,8 @@ js/
   derive.js       best times, place rankings, bloom score
   ui.js           toasts, avatars, flower, side panel, milestones
   settings.js     accessibility options, page size, theme, home nav
-  search.js       Google Maps-style place search (when a key is set)
+  search.js       place search (type + autocomplete) and add-by-link
+  edit.js         edit a suggested idea (name, type, price, hours, notes, link)
   weather.js      forecast (Open-Meteo)
   data.js         built-in places + group suggestions
   dates.js        the planning week and date formatting

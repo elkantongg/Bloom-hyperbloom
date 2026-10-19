@@ -53,9 +53,9 @@ export function timesHTML() {
       '</div>' +
     '</div>' +
     '<div class="best-wrap"><h2 class="sub-title">Best times so far</h2><ul class="best-list" id="bestList" aria-live="polite"></ul></div>' +
-    '<div class="actionbar"><p class="ab-status" id="toPlacesHint"></p>' +
-      '<button type="button" class="btn" id="toPlaces">Next: pick places →</button></div>' +
-  '</section>' + sidebarHTML() + '</div>';
+  '</section>' + sidebarHTML() + '</div>' +
+  '<div class="actionbar"><p class="ab-status" id="toPlacesHint"></p>' +
+    '<button type="button" class="btn" id="toPlaces">Next: pick places →</button></div>';
 }
 export function slug(s) { return (s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'plan').slice(0, 24); }
 

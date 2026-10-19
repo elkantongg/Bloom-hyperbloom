@@ -7,12 +7,13 @@ import { announce, avatarStack, buzz, namesList, refresh, sidebarHTML, toast } f
 import { go, later } from './router.js';
 import { simulateTimes } from './times.js';
 import { bindSearch, searchHTML } from './search.js';
+import { editButton, openEditor } from './edit.js';
 import { api, applyState, saveSoon } from './live.js';
 import { updateWeatherEls } from './weather.js';
 
 export function placesHTML() {
   return '<div class="page-top"><div class="page-head"><h1>Where should we go?</h1>' +
-      '<p>Swipe right if you’d love it, left to pass, up for maybe. There are no wrong answers — your friends are voting too.</p></div></div>' +
+      '<p></p></div></div>' +
     '<div class="layout"><section>' +
     '<div class="places-layout">' +
       '<div class="deck-wrap">' +
@@ -31,10 +32,10 @@ export function placesHTML() {
       '</div>' +
       '</div>' +
     '</div>' +
-    '<div class="actionbar"><button type="button" class="btn ghost small" id="undoVote">↶ Undo</button>' +
-      '<p class="ab-status" id="toBloomHint"></p>' +
-      '<button type="button" class="btn" id="toBloom">See the plan bloom →</button></div>' +
-  '</section>' + sidebarHTML() + '</div>';
+  '</section>' + sidebarHTML() + '</div>' +
+  '<div class="actionbar"><button type="button" class="btn ghost small" id="undoVote">↶ Undo</button>' +
+    '<p class="ab-status" id="toBloomHint"></p>' +
+    '<button type="button" class="btn" id="toBloom">See the plan bloom →</button></div>';
 }
 
 export function cardHTML(pl, depth) {
@@ -57,6 +58,7 @@ export function cardHTML(pl, depth) {
       (pl.hoursToday ? '<p class="hours">🕒 Today: ' + esc(pl.hoursToday) + '</p>' : '') +
 
       '<div class="meta-row">' +
+        (pl.custom ? editButton(state.custom.find((x) => x.id === pl.id), pl.name) : '') +
         (pl.tags.length ? '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' : '') +
         (pl.website ? '<a class="g-link" href="' + esc(pl.website) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Website &amp; tickets <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' : '') +
         '<a class="g-link" href="' + esc(googleLink(pl)) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>' + (pl.linkLabel || 'Look it up on Google') + ' <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
@@ -126,7 +128,7 @@ export function bindDrag(card) {
   let sx = 0, sy = 0, dx = 0, dy = 0, dragging = false;
   const yes = card.querySelector('.stamp.yes'), no = card.querySelector('.stamp.no'), maybe = card.querySelector('.stamp.maybe');
   card.addEventListener('pointerdown', (e) => {
-    if (e.button > 0 || e.target.closest('a')) return; // let links be clicked
+    if (e.button > 0 || e.target.closest('a, button')) return; // let links and buttons be clicked
     card.classList.remove('hint-wiggle');
     dragActive = true;
     dragging = true; sx = e.clientX; sy = e.clientY; dx = dy = 0;
@@ -236,7 +238,7 @@ export function renderRanking() {
   } else {
     ol.innerHTML = ranked.map((p) =>
       '<li><span class="emoji" aria-hidden="true">' + p.emoji + '</span>' +
-      '<div><div class="name">' + esc(p.name) + '</div>' +
+      '<div><div class="name">' + esc(p.name) + (p.custom ? ' ' + editButton(state.custom.find((x) => x.id === p.id), p.name) : '') + '</div>' +
       '<div class="bar" aria-hidden="true"><i style="--w:' + Math.round((p.points / (2 * total())) * 100) + '%"></i></div>' +
       '<span class="sr-only">' + p.yes.length + ' yes, ' + p.maybe.length + ' maybe, ' + p.no.length + ' no.</span></div>' +
       avatarStack(p.yes) + '</li>').join('');
@@ -258,6 +260,11 @@ export function renderRanking() {
 export function bindPlaces() {
   renderDeck();
   renderRanking();
+  // ✏️ Edit buttons on cards and in Group favourites
+  ['#deck', '#rankList'].forEach((sel) => $(sel).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-edit]');
+    if (b) openEditor(b.dataset.edit);
+  }));
   $('#voteBtns').addEventListener('click', (e) => {
     const b = e.target.closest('[data-vote]');
     if (b) vote(+b.dataset.vote);

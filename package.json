@@ -2,7 +2,7 @@
   "name": "hyperbloom",
   "version": "1.0.0",
   "private": true,
-  "description": "Bloom — paint when you're free, swipe on where to go, watch your group's plan bloom.",
+  "description": "Because “soon” isn't a date",
   "scripts": {
     "start": "python3 server.py"
   }

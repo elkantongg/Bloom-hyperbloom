@@ -42,7 +42,7 @@ export function customPlace(c) {
     map: d && typeof d.lat === 'number' && typeof d.lon === 'number' ? { lat: d.lat, lon: d.lon } : null,
     hoursToday: d ? (todaysHours(d.hours) || d.hoursText || '') : '',
     website: !ln && d && /^https?:\/\//.test(d.website || '') ? d.website : '',
-    blurb: ln && d.description ? d.description + ' · Suggested by ' + by + '.' : d && d.address && d.address !== d.area ? d.address + ' · Suggested by ' + by + '.' : d && d.address ? 'Suggested by ' + by + '.' : 'Suggested by ' + by + '. Tap the Google link to check hours, prices and reviews.',
+    blurb: d && d.description ? d.description + ' · Suggested by ' + by + '.' : d && d.address && d.address !== d.area ? d.address + ' · Suggested by ' + by + '.' : d && d.address ? 'Suggested by ' + by + '.' : 'Suggested by ' + by + '. Tap the Google link to check hours, prices and reviews.',
     tags: d ? [d.stepFree && 'Step-free', d.rating && '⭐ ' + Number(d.rating).toFixed(1) + (d.reviews ? ' (' + Number(d.reviews).toLocaleString() + ')' : ''),
       d.openNow === true && 'Open now', d.reservable && 'Takes reservations'].filter(Boolean) : [],
     custom: true, addedBy: c.addedBy };
