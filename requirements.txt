@@ -1,3 +1,5 @@
-# Nothing is required: Bloom runs on the Python standard library.
+# Install with:  python3 -m pip install -r requirements.txt
+# PostgreSQL (Supabase) driver and connection pool. Required.
+psycopg[binary,pool]>=3.2,<4
 # Optional: faster fuzzy matching for place search (same results without it).
 rapidfuzz>=3.0

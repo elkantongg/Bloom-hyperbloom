@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Bloom server: serves the website and a small JSON API backed by SQLite.
+"""Bloom server: serves the website and a small JSON API backed by PostgreSQL (Supabase).
 
-Only uses Python's standard library, so there is nothing to install.
+Needs DATABASE_URL in .env and the packages in requirements.txt (psycopg).
 Run:  python3 server.py   (or: npm start)
 """
 import hashlib
@@ -14,7 +14,7 @@ import json
 import os
 import re
 import secrets
-import sqlite3
+import sys
 import threading
 import time
 from datetime import date
@@ -25,6 +25,7 @@ import urllib.request
 from urllib.parse import parse_qs, urlparse
 
 import placesearch
+from bloomdb import Database, DatabaseConfigError, Jsonb, database_url, psycopg, redact
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -42,7 +43,6 @@ def load_dotenv(path):
 
 
 load_dotenv(os.path.join(ROOT, ".env"))
-DB_PATH = os.environ.get("BLOOM_DB", os.path.join(ROOT, "data", "bloom.db"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "5178"))
 
@@ -679,57 +679,23 @@ def clean_details(d):
         })
     return out if any(out.values()) else None
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS groups (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL,
-    host_name   TEXT NOT NULL,
-    start_date  TEXT NOT NULL,
-    pw_salt     BLOB NOT NULL,
-    pw_hash     BLOB NOT NULL,
-    created_at  INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS members (
-    id          TEXT PRIMARY KEY,
-    group_id    TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    color       TEXT NOT NULL,
-    token_hash  TEXT NOT NULL,
-    avail       TEXT NOT NULL DEFAULT '[]',
-    votes       TEXT NOT NULL DEFAULT '{}',
-    is_host     INTEGER NOT NULL DEFAULT 0,
-    joined_at   INTEGER NOT NULL,
-    updated_at  INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS members_by_group ON members(group_id);
-CREATE TABLE IF NOT EXISTS places (
-    id          TEXT PRIMARY KEY,
-    group_id    TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    kind        TEXT NOT NULL,
-    added_by    TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
-    created_at  INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS places_by_group ON places(group_id);
-"""
+# The tables live in db/schema.sql. DB is set by init_database() (main, or the tests).
+DB = None
 
 
-def open_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    # Write straight into bloom.db so viewers (e.g. VS Code SQLite Viewer) always see the latest data.
-    conn.execute("PRAGMA journal_mode=DELETE")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.executescript(SCHEMA)
-    # Upgrade older databases in place.
-    if "details" not in {r[1] for r in conn.execute("PRAGMA table_info(places)")}:
-        conn.execute("ALTER TABLE places ADD COLUMN details TEXT")
-    return conn
+def init_database(url=None, **options):
+    """Connect to PostgreSQL and create any missing tables. Raises DatabaseConfigError
+    with a clear, password-free message if DATABASE_URL is missing or unusable."""
+    global DB
+    db = Database(url or database_url(), **options).open()
+    try:
+        db.apply_schema()
+    except psycopg.Error as e:
+        db.close()
+        raise DatabaseConfigError("Couldn't set up the Bloom tables: " + redact(e, db.url)) from None
+    DB = db
+    return db
 
-
-DB = open_db()
-DB_LOCK = threading.Lock()
 
 # Wrong-password protection: after 5 misses from one address, wait 60 seconds.
 FAILS = {}
@@ -762,34 +728,34 @@ def text(body, field, lo, hi):
     return value.strip()
 
 
-def new_member(group_id, name, color, is_host):
+def new_member(conn, group_id, name, color, is_host):
     token = secrets.token_urlsafe(24)
     member_id = secrets.token_urlsafe(8)
-    DB.execute(
-        "INSERT INTO members (id, group_id, name, color, token_hash, is_host, joined_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-        (member_id, group_id, name, color, hash_token(token), 1 if is_host else 0, now(), now()),
+    conn.execute(
+        "INSERT INTO members (id, group_id, name, color, token_hash, is_host, joined_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+        (member_id, group_id, name, color, hash_token(token), bool(is_host), now(), now()),
     )
     return member_id, token
 
 
-def group_state(group_id, member_id):
-    g = DB.execute("SELECT id, title, host_name, start_date FROM groups WHERE id=?", (group_id,)).fetchone()
-    rows = DB.execute(
-        "SELECT id, name, color, avail, votes, is_host FROM members WHERE group_id=? ORDER BY joined_at, rowid",
+def group_state(conn, group_id, member_id):
+    g = conn.execute("SELECT id, title, host_name, start_date FROM groups WHERE id=%s", (group_id,)).fetchone()
+    rows = conn.execute(
+        "SELECT id, name, color, avail, votes, is_host FROM members WHERE group_id=%s ORDER BY joined_at, seq",
         (group_id,),
     ).fetchall()
-    places = DB.execute(
-        "SELECT id, name, kind, added_by, details FROM places WHERE group_id=? ORDER BY created_at, rowid", (group_id,)
+    places = conn.execute(
+        "SELECT id, name, kind, added_by, details FROM places WHERE group_id=%s ORDER BY created_at, seq", (group_id,)
     ).fetchall()
     return {
         "group": {"id": g["id"], "title": g["title"], "host": g["host_name"], "startDate": g["start_date"]},
         "me": member_id,
         "places": [{"id": p["id"], "name": p["name"], "kind": p["kind"], "addedBy": p["added_by"],
-                    "details": json.loads(p["details"]) if p["details"] else None} for p in places],
+                    "details": p["details"] or None} for p in places],
         "members": [
             {
                 "id": r["id"], "name": r["name"], "color": r["color"], "isHost": bool(r["is_host"]),
-                "avail": json.loads(r["avail"]), "votes": json.loads(r["votes"]),
+                "avail": r["avail"], "votes": r["votes"],
             }
             for r in rows
         ],
@@ -810,6 +776,17 @@ class Handler(BaseHTTPRequestHandler):
     CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
            "font-src https://fonts.gstatic.com; img-src 'self' data: https:; "
            "connect-src 'self' https://api.open-meteo.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+
+    def client_ip(self):
+        """Who's asking, for rate limits and the wrong-password lockout. On Vercel every
+        request arrives from its proxy, which puts the visitor's real address in
+        X-Forwarded-For (and overwrites any value the visitor sent). Elsewhere that header
+        could be faked, so it's only trusted on Vercel."""
+        if os.environ.get("VERCEL"):
+            fwd = (self.headers.get("X-Forwarded-For") or self.headers.get("X-Real-IP") or "").split(",")[0].strip()
+            if fwd:
+                return fwd[:64]
+        return self.client_address[0]
 
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -844,13 +821,13 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(400, "Invalid JSON")
         return body
 
-    def auth(self, group_id):
+    def auth(self, conn, group_id):
         header = self.headers.get("Authorization", "")
         token = header[7:] if header.startswith("Bearer ") else ""
         if not token:
             raise ApiError(401, "Join the group first")
-        row = DB.execute(
-            "SELECT id FROM members WHERE group_id=? AND token_hash=?", (group_id, hash_token(token))
+        row = conn.execute(
+            "SELECT id FROM members WHERE group_id=%s AND token_hash=%s", (group_id, hash_token(token))
         ).fetchone()
         if not row:
             raise ApiError(401, "Your session for this group has expired. Open the invite link again.")
@@ -895,14 +872,15 @@ class Handler(BaseHTTPRequestHandler):
     def api(self, method, path):
         try:
             parts = [p for p in path.split("/") if p][1:]  # drop "api"
-            # The DB lock is only held around database work. Password hashing is
-            # deliberately slow, so it runs outside the lock and never blocks others.
+            # Each request's database work is one transaction: it all commits, or (on any
+            # error) none of it does. Password hashing is deliberately slow, so it runs
+            # outside transactions and never holds a connection or a lock.
             if method == "POST" and parts == ["groups"]:
                 return self.create_group()
             if len(parts) >= 2 and parts[0] == "groups":
                 gid = parts[1]
-                with DB_LOCK:
-                    exists = DB.execute("SELECT 1 FROM groups WHERE id=?", (gid,)).fetchone()
+                with DB.transaction() as conn:
+                    exists = conn.execute("SELECT 1 FROM groups WHERE id=%s", (gid,)).fetchone()
                 if not exists:
                     raise ApiError(404, "This invite link doesn't exist or has been deleted")
                 rest = parts[2:]
@@ -911,8 +889,8 @@ class Handler(BaseHTTPRequestHandler):
                 if method == "POST" and rest == ["join"]:
                     return self.join(gid)
                 if method == "GET" and rest == ["state"]:
-                    with DB_LOCK:
-                        payload = group_state(gid, self.auth(gid))
+                    with DB.transaction() as conn:
+                        payload = group_state(conn, gid, self.auth(conn, gid))
                     return self.send_json(200, payload)
                 if method == "PUT" and rest == ["me"]:
                     return self.update_me(gid)
@@ -923,12 +901,17 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(404, "Not found")
         except ApiError as e:
             self.send_json(e.status, {"error": e.message})
+        except psycopg.Error as e:
+            # The transaction was rolled back, so nothing was half-saved. Log the kind of
+            # failure (redacted), never the connection string.
+            self.log_error("Database error (%s): %s", type(e).__name__, redact(e, DB.url if DB else "").strip()[:300])
+            self.send_json(503, {"error": "Bloom couldn't reach its database, so nothing was saved. Try again in a moment."})
         except Exception as e:  # pragma: no cover - last-resort safety net
             self.log_error("API error: %r", e)
             self.send_json(500, {"error": "Something went wrong on the server"})
 
     def create_group(self):
-        if not rate_ok(self.client_address[0], "create", 20):
+        if not rate_ok(self.client_ip(), "create", 20):
             raise ApiError(429, "You've created a lot of groups just now — try again in a minute")
         body = self.read_body()
         title = text(body, "title", 1, 40)
@@ -942,24 +925,23 @@ class Handler(BaseHTTPRequestHandler):
         gid = secrets.token_urlsafe(6)
         salt = secrets.token_bytes(16)
         pw_hash = hash_password(password, salt)  # slow on purpose; outside the lock
-        with DB_LOCK:
-            DB.execute(
-                "INSERT INTO groups (id, title, host_name, start_date, pw_salt, pw_hash, created_at) VALUES (?,?,?,?,?,?,?)",
+        with DB.transaction() as conn:
+            conn.execute(
+                "INSERT INTO groups (id, title, host_name, start_date, pw_salt, pw_hash, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (gid, title, name, start, salt, pw_hash, now()),
             )
-            member_id, token = new_member(gid, name, COLORS[0], True)
-            DB.commit()
-            payload = group_state(gid, member_id)
+            member_id, token = new_member(conn, gid, name, COLORS[0], True)
+            payload = group_state(conn, gid, member_id)
         self.send_json(201, {"groupId": gid, "memberId": member_id, "token": token, "state": payload})
 
     def invite(self, gid):
-        with DB_LOCK:
-            g = DB.execute("SELECT title, host_name FROM groups WHERE id=?", (gid,)).fetchone()
-            count = DB.execute("SELECT COUNT(*) FROM members WHERE group_id=?", (gid,)).fetchone()[0]
+        with DB.transaction() as conn:
+            g = conn.execute("SELECT title, host_name FROM groups WHERE id=%s", (gid,)).fetchone()
+            count = conn.execute("SELECT COUNT(*) AS n FROM members WHERE group_id=%s", (gid,)).fetchone()["n"]
         self.send_json(200, {"title": g["title"], "host": g["host_name"], "memberCount": count})
 
     def join(self, gid):
-        ip = self.client_address[0]
+        ip = self.client_ip()
         key = (gid, ip)
         with FAILS_LOCK:
             count, until = FAILS.get(key, (0, 0))
@@ -968,10 +950,10 @@ class Handler(BaseHTTPRequestHandler):
         body = self.read_body()
         name = text(body, "name", 1, 20)
         password = body.get("password") if isinstance(body.get("password"), str) else ""
-        with DB_LOCK:
-            g = DB.execute("SELECT pw_salt, pw_hash FROM groups WHERE id=?", (gid,)).fetchone()
-        # Slow on purpose (makes guessing passwords impractical); outside the lock.
-        if not hmac.compare_digest(hash_password(password, g["pw_salt"]), g["pw_hash"]):
+        with DB.transaction() as conn:
+            g = conn.execute("SELECT pw_salt, pw_hash FROM groups WHERE id=%s", (gid,)).fetchone()
+        # Slow on purpose (makes guessing passwords impractical); outside any transaction.
+        if not hmac.compare_digest(hash_password(password, bytes(g["pw_salt"])), bytes(g["pw_hash"])):
             with FAILS_LOCK:
                 if len(FAILS) > 5000:  # forget stale entries so memory can't grow forever
                     stale = [k for k, (_, u) in FAILS.items() if u < time.time()]
@@ -982,15 +964,17 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(403, "That password doesn't match")
         with FAILS_LOCK:
             FAILS.pop(key, None)
-        with DB_LOCK:
-            names = [r[0].casefold() for r in DB.execute("SELECT name FROM members WHERE group_id=?", (gid,)).fetchall()]
+        with DB.transaction() as conn:
+            # Lock the group row so two people joining at once can't take the same name
+            # or push the group past its size limit.
+            conn.execute("SELECT 1 FROM groups WHERE id=%s FOR UPDATE", (gid,))
+            names = [r["name"].casefold() for r in conn.execute("SELECT name FROM members WHERE group_id=%s", (gid,)).fetchall()]
             if name.casefold() in names:
                 raise ApiError(409, f"Someone called {name} is already in this group. Add an initial, like “{name} T”.")
             if len(names) >= MAX_MEMBERS:
                 raise ApiError(403, f"This group is full ({MAX_MEMBERS} people max)")
-            member_id, token = new_member(gid, name, COLORS[len(names) % len(COLORS)], False)
-            DB.commit()
-            payload = group_state(gid, member_id)
+            member_id, token = new_member(conn, gid, name, COLORS[len(names) % len(COLORS)], False)
+            payload = group_state(conn, gid, member_id)
         self.send_json(201, {"groupId": gid, "memberId": member_id, "token": token, "state": payload})
 
     def update_me(self, gid):
@@ -1005,19 +989,18 @@ class Handler(BaseHTTPRequestHandler):
             # type() check rejects true/false, which Python would otherwise treat as 1/0.
             if not isinstance(votes, dict) or not all(isinstance(k, str) and type(v) is int and v in (-1, 0, 1) for k, v in votes.items()):
                 raise ApiError(400, "Invalid votes")
-        with DB_LOCK:
-            member_id = self.auth(gid)
+        with DB.transaction() as conn:
+            member_id = self.auth(conn, gid)
             if votes is not None:
                 # Real groups only vote on places their members suggested.
-                allowed = {r[0] for r in DB.execute("SELECT id FROM places WHERE group_id=?", (gid,))}
+                allowed = {r["id"] for r in conn.execute("SELECT id FROM places WHERE group_id=%s", (gid,))}
                 if not set(votes) <= allowed:
                     raise ApiError(400, "Invalid votes")
             if avail is not None:
-                DB.execute("UPDATE members SET avail=?, updated_at=? WHERE id=?", (json.dumps(sorted(set(avail))), now(), member_id))
+                conn.execute("UPDATE members SET avail=%s, updated_at=%s WHERE id=%s", (Jsonb(sorted(set(avail))), now(), member_id))
             if votes is not None:
-                DB.execute("UPDATE members SET votes=?, updated_at=? WHERE id=?", (json.dumps(votes), now(), member_id))
-            DB.commit()
-            payload = group_state(gid, member_id)
+                conn.execute("UPDATE members SET votes=%s, updated_at=%s WHERE id=%s", (Jsonb(votes), now(), member_id))
+            payload = group_state(conn, gid, member_id)
         self.send_json(200, payload)
 
     def link_route(self, url):
@@ -1026,7 +1009,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(400, {"error": "Paste a link first"})
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
-        if not rate_ok(self.client_address[0], "link", 10):
+        if not rate_ok(self.client_ip(), "link", 10):
             return self.send_json(429, {"error": "Too many links — try again in a minute"})
         try:
             self.send_json(200, {"place": link_preview(url)})
@@ -1037,7 +1020,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def places_route(self, which, arg):
         """Place search: Google Places if a key is set, otherwise free (Photon + OpenStreetMap)."""
-        ip = self.client_address[0]
+        ip = self.client_ip()
         if not GOOGLE_KEY:
             return self.free_places_route(which, arg, ip)
         session = arg("session") if SESSION.fullmatch(arg("session") or "") else None
@@ -1100,7 +1083,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def edit_place(self, gid, pid):
         """The person who suggested a place (or the host) can fix its name, type and details."""
-        if not rate_ok(self.client_address[0], "editplace", 30):
+        if not rate_ok(self.client_ip(), "editplace", 30):
             raise ApiError(429, "Slow down a little — try again in a minute")
         body = self.read_body()
         name = text(body, "name", 1, MAX_PLACE_NAME)
@@ -1108,17 +1091,18 @@ class Handler(BaseHTTPRequestHandler):
         if kind not in KINDS:
             raise ApiError(400, "Pick a type: food, drinks, activity or something else")
         e = body.get("edits") if isinstance(body.get("edits"), dict) else {}
-        with DB_LOCK:
-            member_id = self.auth(gid)
-            row = DB.execute("SELECT added_by, details FROM places WHERE id=? AND group_id=?", (pid, gid)).fetchone()
+        with DB.transaction() as conn:
+            member_id = self.auth(conn, gid)
+            conn.execute("SELECT 1 FROM groups WHERE id=%s FOR UPDATE", (gid,))  # one deck change at a time
+            row = conn.execute("SELECT added_by, details FROM places WHERE id=%s AND group_id=%s", (pid, gid)).fetchone()
             if not row:
                 raise ApiError(404, "That idea isn't in this group any more")
-            is_host = DB.execute("SELECT is_host FROM members WHERE id=?", (member_id,)).fetchone()[0]
+            is_host = conn.execute("SELECT is_host FROM members WHERE id=%s", (member_id,)).fetchone()["is_host"]
             if row["added_by"] != member_id and not is_host:
                 raise ApiError(403, "Only the person who suggested this (or the host) can edit it")
-            if DB.execute("SELECT 1 FROM places WHERE group_id=? AND id<>? AND lower(name)=lower(?)", (gid, pid, name)).fetchone():
+            if conn.execute("SELECT 1 FROM places WHERE group_id=%s AND id<>%s AND lower(name)=lower(%s)", (gid, pid, name)).fetchone():
                 raise ApiError(409, f"“{name}” is already in the deck")
-            details = json.loads(row["details"]) if row["details"] else {"source": "manual"}
+            details = dict(row["details"]) if row["details"] else {"source": "manual"}
             def s(v, n):
                 return v.strip()[:n] if isinstance(v, str) else None
             if "category" in e:
@@ -1139,13 +1123,12 @@ class Handler(BaseHTTPRequestHandler):
                 if w and not re.match(r"https?://[^\s\"'<>]+$", w):
                     w = "https://" + w if re.match(r"[\w.-]+\.[a-z]{2,}([/?#][^\s\"'<>]*)?$", w, re.I) else ""
                 details["website"] = w or None
-            DB.execute("UPDATE places SET name=?, kind=?, details=? WHERE id=?", (name, kind, json.dumps(details), pid))
-            DB.commit()
-            payload = group_state(gid, member_id)
+            conn.execute("UPDATE places SET name=%s, kind=%s, details=%s WHERE id=%s", (name, kind, Jsonb(details), pid))
+            payload = group_state(conn, gid, member_id)
         self.send_json(200, payload)
 
     def add_place(self, gid):
-        if not rate_ok(self.client_address[0], "addplace", 30):
+        if not rate_ok(self.client_ip(), "addplace", 30):
             raise ApiError(429, "Slow down a little — try again in a minute")
         body = self.read_body()
         details = clean_details(body.get("details"))
@@ -1153,25 +1136,29 @@ class Handler(BaseHTTPRequestHandler):
         kind = body.get("kind")
         if kind not in KINDS:
             raise ApiError(400, "Pick a type: food, drinks, activity, outdoors or other")
-        with DB_LOCK:
-            member_id = self.auth(gid)
-            existing = [r[0].casefold() for r in DB.execute("SELECT name FROM places WHERE group_id=?", (gid,))]
+        with DB.transaction() as conn:
+            member_id = self.auth(conn, gid)
+            conn.execute("SELECT 1 FROM groups WHERE id=%s FOR UPDATE", (gid,))  # no duplicate or 21st idea in a race
+            existing = [r["name"].casefold() for r in conn.execute("SELECT name FROM places WHERE group_id=%s", (gid,))]
             if name.casefold() in existing:
                 raise ApiError(409, f"“{name}” is already in the deck")
             if len(existing) >= MAX_CUSTOM_PLACES:
                 raise ApiError(403, f"This group already has {MAX_CUSTOM_PLACES} suggestions")
-            DB.execute(
-                "INSERT INTO places (id, group_id, name, kind, added_by, created_at, details) VALUES (?,?,?,?,?,?,?)",
-                ("p_" + secrets.token_urlsafe(6), gid, name, kind, member_id, now(), json.dumps(details) if details else None),
+            conn.execute(
+                "INSERT INTO places (id, group_id, name, kind, added_by, created_at, details) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                ("p_" + secrets.token_urlsafe(6), gid, name, kind, member_id, now(), Jsonb(details) if details else None),
             )
-            DB.commit()
-            payload = group_state(gid, member_id)
+            payload = group_state(conn, gid, member_id)
         self.send_json(201, payload)
 
 
 def main():
+    try:
+        init_database()
+    except DatabaseConfigError as e:
+        sys.exit(f"Bloom can't start: {e}")
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"Bloom is running at http://localhost:{PORT}  (database: {os.path.relpath(DB_PATH, ROOT)})")
+    print(f"Bloom is running at http://localhost:{PORT}  (database: PostgreSQL at {DB.describe()})")
     idx = None if GOOGLE_KEY else placesearch.load()
     print("Place search: " + ("Google Places" if GOOGLE_KEY else "free (Photon + OpenStreetMap, no key needed)"))
     if not GOOGLE_KEY:
@@ -1184,6 +1171,7 @@ def main():
         print("\nStopped.")
     finally:
         server.server_close()
+        DB.close()
 
 
 if __name__ == "__main__":

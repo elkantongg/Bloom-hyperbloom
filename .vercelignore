@@ -1,0 +1,12 @@
+# Not needed on Vercel (and never upload secrets or local data)
+.env
+.env.*
+.venv/
+data/
+tests/
+search/.cache/
+__pycache__/
+*.pyc
+.vscode/
+.DS_Store
+migrate_sqlite_to_postgres.py
