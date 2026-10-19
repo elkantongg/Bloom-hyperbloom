@@ -232,7 +232,7 @@ Existing SQLite databases should be retained as backups until migration results 
 
 ---
 
-## 🔎 Singapore Place Discovery
+## Singapore Place Discovery
 
 Bloom uses free and open-source geographic data to help groups discover venues across Singapore.
 
@@ -302,7 +302,7 @@ Google Places requires separate API credentials and may incur usage charges.
 
 ---
 
-## 🌦️ Weather Integration
+## Weather Integration
 
 Bloom uses the **Open-Meteo API** to display weather forecasts for planned outings.
 
@@ -320,7 +320,7 @@ Forecast accuracy and availability depend on the API and forecast horizon.
 
 ---
 
-## ♿ Accessibility and Inclusive Design
+## Accessibility and Inclusive Design
 
 Bloom aims to make group planning approachable and accessible.
 
@@ -371,7 +371,7 @@ Tests should run against a dedicated test database, never the production Supabas
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
 Bloom-hyperbloom/
@@ -431,7 +431,7 @@ Bloom-hyperbloom/
 
 ---
 
-## 🔐 Security Considerations
+## Security Considerations
 
 Bloom uses group passwords and private session tokens to restrict access to group information.
 The Python backend handles authorization, while Supabase provides persistent database storage.
@@ -440,7 +440,7 @@ A production deployment should also use HTTPS and appropriate operational monito
 
 ---
 
-## 🌷 Future Improvements
+## Future Improvements
 
 Potential future developments include:
 
@@ -455,7 +455,7 @@ Potential future developments include:
 
 ---
 
-## 📚 Data Sources and Acknowledgements
+## Data Sources and Acknowledgements
 
 - **OpenStreetMap contributors** — geographic and venue information, licensed under the Open Database License (ODbL)
 - **Photon** — OpenStreetMap-based place search
@@ -471,5 +471,4 @@ Map data © OpenStreetMap contributors.
 ### Bloom
 
 **Don't leave your plans in the bud. Make room for Bloom.**
-
 *Because the best memories begin when plans actually happen.*
