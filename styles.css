@@ -500,7 +500,8 @@ kbd {
 .bloom-sub { text-align: center; color: var(--muted); margin-top: 8px; }
 
 /* ---------- Toasts & confetti ---------- */
-.toasts { position: fixed; left: 50%; top: 78px; transform: translateX(-50%); z-index: 50; display: grid; gap: 8px; justify-items: center; pointer-events: none; }
+/* Notifications stack on the right, just under the header */
+.toasts { position: fixed; right: 20px; top: 84px; z-index: 50; display: grid; gap: 8px; justify-items: end; pointer-events: none; }
 .toast {
   display: flex; align-items: center; gap: 10px; padding: 8px 16px 8px 8px; border-radius: 999px;
   background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 600; box-shadow: var(--shadow);
@@ -508,8 +509,8 @@ kbd {
   animation: toastIn .35s cubic-bezier(.3, 1.3, .5, 1), toastOut .3s ease 2.8s forwards;
 }
 .toast .av { border-color: var(--ink); }
-@keyframes toastIn { from { opacity: 0; transform: translateY(-16px) scale(.95); } }
-@keyframes toastOut { to { opacity: 0; transform: translateY(-8px); } }
+@keyframes toastIn { from { opacity: 0; transform: translateX(24px) scale(.97); } }
+@keyframes toastOut { to { opacity: 0; transform: translateX(24px); } }
 
 .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 40; overflow: hidden; }
 .confetti i {
@@ -874,3 +875,5 @@ kbd {
   background: rgba(0, 0, 0, .5); padding: 2px 8px; border-radius: 999px;
 }
 .photo-credit:hover { text-decoration: underline; }
+
+@media (max-width: 600px) { .toasts { right: 16px; top: 72px; } }
