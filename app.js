@@ -64,17 +64,23 @@
     food: { label: 'Food', emoji: '🍽️', hue: '#FFC48A' },
     drinks: { label: 'Drinks', emoji: '🧋', hue: '#FFB0D2' },
     activity: { label: 'Activity', emoji: '🎯', hue: '#A9C4FF' },
-    outdoors: { label: 'Outdoors', emoji: '🌳', hue: '#A8E6B4' },
     other: { label: 'Something else', emoji: '✨', hue: '#D2B8FF' },
   };
   function customPlace(c) {
-    const k = KINDS[c.kind] || KINDS.other;
+    const k = KINDS[c.kind === 'outdoors' ? 'activity' : c.kind] || KINDS.other;
     const by = c.addedBy === state.me.id ? 'you' : ((state.friends.find((f) => f.id === c.addedBy) || {}).name || 'a friend');
     const d = c.details || null; // the place the person confirmed from the list, if any
     return { id: c.id, q: c.name, name: c.name, kind: (d && d.category) || k.label, emoji: k.emoji, hue: k.hue,
-      price: '', dist: (d && d.area) || '',
+      price: (d && d.price) || '', dist: (d && d.area) || '',
+      hoursToday: d ? (todaysHours(d.hours) || d.hoursText || '') : '',
+      website: d && /^https?:\/\//.test(d.website || '') ? d.website : '',
       blurb: d && d.address ? d.address + ' · Suggested by ' + by + '.' : 'Suggested by ' + by + '. Tap the Google link to check hours, prices and reviews.',
       tags: [], custom: true, addedBy: c.addedBy };
+  }
+  // Map hours are listed Monday-first: "Monday: 08:30 – 18:00".
+  function todaysHours(lines) {
+    if (!lines || lines.length !== 7) return '';
+    return (lines[(new Date().getDay() + 6) % 7] || '').replace(/^[^:]+:\s*/, '');
   }
   // Everything in the deck: built-in ideas first, then the group's own suggestions.
   function allPlaces() { return PLACES.concat(state.custom.map(customPlace)); }
@@ -165,7 +171,8 @@
         else r.no.push(p);
       });
       return r;
-    }).sort((a, b) => b.points - a.points || a.no.length - b.no.length);
+    // Most points (love it = 2, maybe = 1), then most "love it", then fewest passes.
+    }).sort((a, b) => b.points - a.points || b.yes.length - a.yes.length || a.no.length - b.no.length);
   }
 
   function personProgress(p) {
@@ -798,7 +805,7 @@
           '<div class="deck" id="deck"></div>' +
           '<div class="vote-btns" id="voteBtns">' +
             '<button type="button" class="vote no" data-vote="-1"><span class="v-ico" aria-hidden="true">✕</span><span class="v-lbl">Pass</span></button>' +
-            '<button type="button" class="vote maybe" data-vote="0"><span class="v-ico" aria-hidden="true">🤔</span><span class="v-lbl">Maybe</span></button>' +
+            '<button type="button" class="vote maybe" data-vote="0"><span class="v-ico" aria-hidden="true">?</span><span class="v-lbl">Maybe</span></button>' +
             '<button type="button" class="vote yes" data-vote="1"><span class="v-ico" aria-hidden="true">♥</span><span class="v-lbl">Love it</span></button>' +
           '</div>' +
           '<p class="kbd-hint">Keyboard: <kbd>←</kbd> pass · <kbd>↑</kbd> maybe · <kbd>→</kbd> love it</p>' +
@@ -837,9 +844,11 @@
       '<div class="card-body"><h3>' + esc(pl.name) + '</h3>' +
         (pl.price || pl.dist ? '<div class="meta">' + [pl.price, pl.dist].filter(Boolean).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') +
         '<p class="blurb">' + esc(pl.blurb) + '</p>' +
+        (pl.hoursToday ? '<p class="hours">🕒 Today: ' + esc(pl.hoursToday) + '</p>' : '') +
 
         '<div class="meta-row">' +
           (pl.tags.length ? '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' : '') +
+          (pl.website ? '<a class="g-link" href="' + esc(pl.website) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Website &amp; tickets <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' : '') +
           '<a class="g-link" href="' + googleLink(pl) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Look it up on Google <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
         '</div>' +
         (pl.outdoor ? '<div class="wx" data-wx hidden></div>' : '') +
@@ -987,7 +996,7 @@
       (!found.length || approx ? '<p class="pick-hint">' + missingNote + '</p>' : '') +
       '<ul' + (approx ? ' class="approx"' : '') + '>' + found.map((r, i) => '<li><button type="button" class="pick" data-i="' + i + '">' +
         '<strong>' + esc(r.name || name) + (r.area ? ' · ' + esc(r.area) : '') + '</strong>' +
-        '<span>' + esc([r.category, r.address].filter(Boolean).join(' · ')) + '</span></button></li>').join('') +
+        '<span>' + esc([r.category, r.price, r.address].filter(Boolean).join(' · ')) + '</span></button></li>').join('') +
       '<li><button type="button" class="pick plain" data-i="-1"><strong>' + (found.length && !approx ? 'None of these' : 'Add it anyway') + '</strong>' +
         '<span>Add “' + esc(name) + '” as typed</span></button></li></ul>';
     box.hidden = false;
@@ -1012,7 +1021,8 @@
     let label = match ? (match.name || name) + (match.area ? ' (' + match.area + ')' : '') : name;
     if (label.length > 40) label = label.slice(0, 39) + '…';
     if (allPlaces().some((p) => p.name.toLowerCase() === label.toLowerCase())) { if (err) err.textContent = '“' + label + '” is already in the deck.'; return; }
-    const details = match ? { area: match.area, address: match.address, category: match.category } : null;
+    const details = match ? { area: match.area, address: match.address, category: match.category, price: match.price,
+      hours: match.hours, hoursText: match.hoursText, website: match.website, phone: match.phone } : null;
     if (state.mode === 'live') {
       try {
         const data = await api('POST', '/groups/' + encodeURIComponent(state.group.id) + '/places', { name: label, kind: kind, details: details });
@@ -1108,6 +1118,7 @@
         '<h1 class="bloom-title">' + (score >= 80 ? 'It’s a plan! 🌸' : score >= 50 ? 'Almost in bloom 🌷' : 'Still budding 🌱') + '</h1>' +
         '<p class="bloom-sub"><strong data-bloom-score>' + score + '%</strong> in bloom · ' +
           (score >= 80 ? 'Everyone’s on board.' : 'A few people are still deciding — you can lock it in anyway.') + '</p>' +
+        tieHTML() +
         '<div id="waitingBox">' + waitingHTML() + '</div>' +
       '</div>' +
       '<div><article class="plan-card" id="planCard" aria-labelledby="planTitle"></article>' +
@@ -1125,6 +1136,16 @@
     '</section>';
   }
 
+  // Still level after every tie-break? Say so, and let the group pick.
+  function tieHTML() {
+    const r = rankPlaces();
+    if (r.length < 2 || !r[0].voters) return '';
+    const same = (a, b) => a.points === b.points && a.yes.length === b.yes.length && a.no.length === b.no.length;
+    const tied = r.filter((p) => same(p, r[0]));
+    if (tied.length < 2) return '';
+    return '<p class="tie-note">🤝 It’s a tie between ' + esc(tied.map((p) => p.name).join(' and ')) +
+      '. We picked one — use <strong>Change the time or place</strong> to swap.</p>';
+  }
   function renderWaiting() {
     const box = $('#waitingBox');
     if (!box) return;
@@ -1163,7 +1184,7 @@
       card.innerHTML = '<div class="plan-rows"><p class="empty" style="padding:20px 0">Paint at least one free hour so Bloom can find a time. <a class="link-btn" href="#/times">Add your times</a></p></div>';
       return;
     }
-    const sig = [run.id, pl.id, pl.name, run.who.map((p) => p.id).join(','), people().map((p) => p.id + ':' + p.avail.size).join(','), WEATHER.status, WEATHER.place].join('|');
+    const sig = [run.id, pl.id, pl.name, pl.hoursToday, pl.website, run.who.map((p) => p.id).join(','), people().map((p) => p.id + ':' + p.avail.size).join(','), WEATHER.status, WEATHER.place].join('|');
     if (card.dataset.sig === sig) return;
     card.dataset.sig = sig;
     const out = people().filter((p) => run.who.indexOf(p) === -1);
@@ -1175,7 +1196,9 @@
           '<div class="v">' + dateLong(run.d) + '</div><div class="sub">' + fmtHour(run.start) + ' – ' + fmtHour(run.end) + '</div></div></div>' +
         '<div class="plan-row"><span class="ico" aria-hidden="true">' + pl.emoji + '</span><div><div class="k">Where</div>' +
           '<div class="v">' + esc(pl.name) + '</div><div class="sub">' + esc([pl.kind, pl.price, pl.dist].concat(pl.tags).filter(Boolean).join(' · ')) +
-          ' · <a href="' + googleLink(pl) + '" target="_blank" rel="noopener">Look it up on Google ↗</a></div></div></div>' +
+          (pl.hoursToday ? '<br>🕒 Today: ' + esc(pl.hoursToday) : '') +
+          (pl.website ? '<br><a href="' + esc(pl.website) + '" target="_blank" rel="noopener">Website &amp; tickets ↗</a> · ' : ' · ') +
+          '<a href="' + googleLink(pl) + '" target="_blank" rel="noopener">Look it up on Google ↗</a></div></div></div>' +
         weatherRow(run, pl) +
         '<div class="plan-row"><span class="ico" aria-hidden="true">👯</span><div><div class="k">Who’s coming · ' + run.who.length + ' of ' + total() + '</div>' +
           '<div class="going">' +

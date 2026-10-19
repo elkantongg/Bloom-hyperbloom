@@ -824,3 +824,16 @@ kbd {
   .legend { grid-template-columns: 1fr 1fr; }
   .lg-item:first-child { grid-column: 1 / -1; }
 }
+
+/* Header: logo | centred nav | actions — the middle stays truly centred */
+.topbar { display: grid; grid-template-columns: 1fr auto 1fr; }
+.topbar .brand { justify-self: start; }
+.topbar nav { margin: 0; justify-self: center; }
+.top-actions { justify-self: end; display: flex; align-items: center; gap: 12px; }
+.vote .v-ico { font-weight: 800; }
+.card-body .hours { font-size: 14px; font-weight: 600; }
+.tie-note { margin-top: 12px; text-align: center; color: var(--muted); font-size: 14px; }
+@media (max-width: 600px) {
+  .top-actions { gap: 4px; }
+  .topbar.is-home { grid-template-columns: auto 1fr; }
+}

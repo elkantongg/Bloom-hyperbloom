@@ -52,7 +52,7 @@ STATIC = {
 
 COLORS = ["#2F6FEB", "#E03131", "#D9831A", "#7C5CFF", "#11966A", "#0E8E9C", "#B4469B", "#8A6D1F", "#C2410C", "#4F46E5", "#0F766E", "#BE185D"]
 PLACE_IDS = {"noodle", "bowling", "picnic", "escape", "karaoke", "cafe"}  # built-in suggestions
-KINDS = {"food", "drinks", "activity", "outdoors", "other"}
+KINDS = {"food", "drinks", "activity", "other"}
 MAX_CUSTOM_PLACES = 20
 MAX_MEMBERS = 12
 MAX_BODY = 16 * 1024
@@ -75,14 +75,60 @@ KIND_MATCH = {
              "shop": {"bakery", "pastry", "confectionery", "deli"}},
     "drinks": {"amenity": {"cafe", "bar", "pub", "biergarten"},
                "shop": {"beverages", "tea", "coffee", "alcohol", "wine"}},
+    # Activities include outdoor things too: parks, beaches, trails, zoos...
     "activity": {"amenity": {"cinema", "theatre", "arts_centre", "karaoke_box", "nightclub", "events_venue",
                              "community_centre", "casino"},
-                 "leisure": None, "tourism": None},
-    "outdoors": {"leisure": {"park", "garden", "nature_reserve", "beach_resort", "playground", "pitch", "track",
-                             "dog_park", "picnic_table", "fishing"},
-                 "natural": None, "tourism": {"viewpoint", "picnic_site", "camp_site", "attraction"},
-                 "boundary": {"national_park"}},
+                 "leisure": None, "tourism": None, "natural": None, "boundary": {"national_park"}},
 }
+
+
+DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+OSM_DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+
+
+def osm_hours_to_week(spec):
+    """'Mo-Th 10:00-19:00; Fr-Sa 10:00-22:00' -> ['Monday: 10:00 – 19:00', ...].
+    Returns [] for formats we don't understand (the raw text is shown instead)."""
+    if not spec:
+        return []
+    if spec.strip() == "24/7":
+        return [f"{d}: Open 24 hours" for d in DAY_NAMES]
+    week = [None] * 7
+    for rule in spec.split(";"):
+        rule = rule.strip()
+        if re.fullmatch(r"[0-9:\-, ]+", rule):  # times only = every day
+            rule = "Mo-Su " + rule
+        m = re.fullmatch(r"([A-Za-z,\- ]+?)\s+([0-9:\-, ]+|off|closed)", rule)
+        if not m:
+            return []
+        idx = []
+        for part in m.group(1).replace(" ", "").split(","):
+            if "-" in part:
+                a, b = part.split("-", 1)
+                if a not in OSM_DAYS or b not in OSM_DAYS:
+                    return []
+                i, j = OSM_DAYS.index(a), OSM_DAYS.index(b)
+                idx += list(range(i, j + 1)) if i <= j else list(range(i, 7)) + list(range(0, j + 1))
+            elif part in OSM_DAYS:
+                idx.append(OSM_DAYS.index(part))
+            else:
+                return []
+        times = m.group(2).strip()
+        label = "Closed" if times in ("off", "closed") else times.replace("-", " – ").replace(",", ", ")
+        for i in idx:
+            week[i] = label
+    return [f"{DAY_NAMES[i]}: {week[i] or 'Closed'}" for i in range(7)]
+
+
+def price_text(e):
+    """Entry price if the map lists one: 'charge=49 SGD' -> 'S$49'; 'fee=no' -> 'Free'."""
+    charge = (e.get("charge") or "").strip()
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*SGD", charge)
+    if m:
+        return "S$" + m.group(1)
+    if charge:
+        return charge[:30]
+    return {"no": "Free entry", "yes": "Paid entry"}.get(e.get("fee"))
 
 
 def matches_kind(row, kind):
@@ -108,21 +154,35 @@ def osm_lookup(query, kind):
     req = urllib.request.Request("https://nominatim.openstreetmap.org/search?" + qs, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=6) as r:
         rows = json.loads(r.read())
-    out = []
+    out, seen = [], set()
     for row in rows:
         if not matches_kind(row, kind):
             continue
         a = row.get("address") or {}
         street = " ".join(x for x in (a.get("house_number"), a.get("road")) if x)
         area = a.get("suburb") or a.get("city_district") or a.get("neighbourhood") or a.get("quarter")
-        cuisine = ((row.get("extratags") or {}).get("cuisine") or "").split(";")[0].replace("_", " ").strip()
+        e = row.get("extratags") or {}
+        cuisine = (e.get("cuisine") or "").split(";")[0].replace("_", " ").strip()
         kind_label = (row.get("type") or "").replace("_", " ")
+        if kind_label in ("yes", "no"):  # e.g. building=yes says nothing useful
+            kind_label = (row.get("category") or "").replace("_", " ")
         out.append({
             "name": row.get("name") or (row.get("display_name") or "").split(",")[0],
             "area": area,
             "address": ", ".join(x for x in (street, area, a.get("postcode")) if x) or None,
             "category": (cuisine.title() + " " + kind_label).strip() if cuisine else kind_label.capitalize() or None,
+            "price": price_text(e),
+            "hours": osm_hours_to_week(e.get("opening_hours")),
+            "hoursText": e.get("opening_hours"),
+            "website": e.get("website") or e.get("contact:website") or e.get("url"),
+            "phone": e.get("phone") or e.get("contact:phone"),
         })
+        # The same place is often mapped twice (e.g. a zoo and its entrance): keep the first.
+        key = (out[-1]["name"].casefold(), (out[-1]["area"] or "").casefold())
+        if key in seen:
+            out.pop()
+            continue
+        seen.add(key)
         if len(out) == 5:
             break
     LOOKUP_CACHE[key] = (time.time(), out)
@@ -137,7 +197,12 @@ def clean_details(d):
         return None
     def s(v, n):
         return v.strip()[:n] if isinstance(v, str) and v.strip() else None
-    out = {"area": s(d.get("area"), 60), "address": s(d.get("address"), 200), "category": s(d.get("category"), 60)}
+    def url(v):
+        return v.strip()[:300] if isinstance(v, str) and re.match(r"https?://[^\s\"'<>]+$", v.strip()) else None
+    hours = d.get("hours") if isinstance(d.get("hours"), list) else []
+    out = {"area": s(d.get("area"), 60), "address": s(d.get("address"), 200), "category": s(d.get("category"), 60),
+           "price": s(d.get("price"), 30), "hours": [h for h in (s(x, 60) for x in hours[:7]) if h],
+           "hoursText": s(d.get("hoursText"), 120), "website": url(d.get("website")), "phone": s(d.get("phone"), 30)}
     return out if any(out.values()) else None
 
 SCHEMA = """
