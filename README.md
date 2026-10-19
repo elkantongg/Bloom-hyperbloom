@@ -55,7 +55,7 @@ No user accounts are needed. Passwords are stored hashed (PBKDF2), each person g
 | PUT | `/api/groups/{id}/me` | Save your availability / votes (members only) |
 
 ## APIs
-- **[Open-Meteo](https://open-meteo.com/)** weather forecast API (free, no key, no sign-in). The plan card shows the forecast for the chosen time, and outdoor places warn you when rain is likely. Weather data by Open-Meteo.com (CC BY 4.0).
+- **[Open-Meteo](https://open-meteo.com/)** weather forecast API (free, no key, no sign-in). While you swipe on places, a small weather card under the deck shows the forecast for the chosen time, with a tip like "Rain likely — indoor ideas are the safer bet". The plan card shows it too, and outdoor places warn you when rain is likely. Weather data by Open-Meteo.com (CC BY 4.0).
 
 ## Place search (free, OpenStreetMap)
 "Got another idea?" searches Singapore venues without any paid API:

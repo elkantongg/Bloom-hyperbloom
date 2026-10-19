@@ -974,3 +974,13 @@ kbd {
 /* Card: "Suggested by" on its own line; each link on its own line */
 .card-body .by { font-size: 13px; color: var(--muted); }
 .meta-row .g-link { flex-basis: 100%; }
+
+/* Weather card under the deck: indoor or outdoor? */
+.wx-card { width: 100%; max-width: 360px; box-sizing: border-box; margin-top: -6px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--good) 12%, var(--surface)); text-align: left; }
+.wx-card.maybe { background: color-mix(in srgb, var(--gold) 18%, var(--surface)); }
+.wx-card.warn { background: color-mix(in srgb, var(--gold) 30%, var(--surface)); }
+.wx-card p { margin: 0; }
+.wx-head { font-size: 12px; font-weight: 600; color: var(--muted); }
+.wx-line { margin-top: 2px !important; font-size: 15px; font-weight: 700; }
+.wx-tip { margin-top: 2px !important; font-size: 13px; color: var(--muted); }

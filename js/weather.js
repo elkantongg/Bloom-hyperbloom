@@ -1,8 +1,9 @@
-// Forecast for the plan card (Open-Meteo, free, no key).
-import { $$ } from './util.js';
-import { DAYS, dayShort, fmtHour, pad2 } from './dates.js';
+// Forecasts for the chosen time: on the Where step (to help pick an activity) and
+// on the plan card (Open-Meteo, free, no key).
+import { $, $$, esc } from './util.js';
+import { DAYS, dayShort, fmtHour, fmtRange, pad2 } from './dates.js';
 import { state } from './state.js';
-import { computeRuns } from './derive.js';
+import { chosenRun, computeRuns } from './derive.js';
 import { announce, toast } from './ui.js';
 import { renderPlanCard } from './bloom.js';
 import { api } from './live.js';
@@ -26,6 +27,7 @@ export async function loadWeather() {
     WEATHER.status = 'error';
   }
   updateWeatherEls();
+  renderWeatherPanel();
   if (state.step === 'bloom') renderPlanCard();
 }
 export function weatherAt(di, h) {
@@ -44,7 +46,7 @@ export function wxIcon(c) {
 }
 export function wxText(w) { return wxIcon(w.code) + ' ' + Math.round(w.temp) + '°C · ' + w.pop + '% chance of rain'; }
 export function updateWeatherEls() {
-  const run = computeRuns()[0];
+  const run = chosenRun();
   $$('[data-wx]').forEach((el) => {
     const w = run && weatherAt(run.d, run.start);
     if (!w) { el.hidden = true; return; }
@@ -62,4 +64,38 @@ export function useMyLocation() {
     announce('Updating the forecast for your location.');
     loadWeather();
   }, () => toast(null, 'Location not shared — showing Singapore weather'));
+}
+
+// ---------- Weather card (Where step) ----------
+// The weather can decide the activity (picnic or karaoke?), so a short card under the
+// deck shows the forecast for the chosen time while people swipe.
+function advice(maxPop) {
+  if (maxPop >= 50) return { cls: 'warn', text: 'Rain likely — indoor ideas are the safer bet.' };
+  if (maxPop >= 25) return { cls: 'maybe', text: 'Some chance of showers — keep an indoor backup in mind.' };
+  return { cls: 'ok', text: 'Looks dry — outdoor plans should work too.' };
+}
+
+export function weatherPanelHTML() {
+  return '<div class="wx-card" id="wxPanel" aria-live="polite"></div>';
+}
+
+export function renderWeatherPanel() {
+  const box = $('#wxPanel');
+  if (!box) return;
+  const run = chosenRun();
+  const known = [];
+  if (run) for (let h = run.start; h < run.end; h++) { const w = weatherAt(run.d, h); if (w) known.push(w); }
+  let html = '';
+  if (known.length) {
+    const temps = known.map((w) => Math.round(w.temp));
+    const maxPop = Math.max.apply(null, known.map((w) => w.pop || 0));
+    const lo = Math.min.apply(null, temps), hi = Math.max.apply(null, temps);
+    const tip = advice(maxPop);
+    html = '<p class="wx-head">Weather on ' + esc(dayShort(run.d) + ', ' + fmtRange(run.start, run.end)) + '</p>' +
+      '<p class="wx-line">' + wxIcon(known[0].code) + ' ' + (lo === hi ? lo : lo + '–' + hi) + '°C · up to ' + maxPop + '% chance of rain</p>' +
+      '<p class="wx-tip">' + tip.text + '</p>';
+    box.className = 'wx-card ' + tip.cls;
+  }
+  box.hidden = !html;  // no time painted yet, or no forecast for that day
+  if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
 }

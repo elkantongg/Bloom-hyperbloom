@@ -9,7 +9,7 @@ import { simulateTimes } from './times.js';
 import { bindSearch, searchHTML } from './search.js';
 import { editButton, openEditor } from './edit.js';
 import { api, applyState, saveSoon } from './live.js';
-import { updateWeatherEls } from './weather.js';
+import { renderWeatherPanel, updateWeatherEls, weatherPanelHTML } from './weather.js';
 
 export function placesHTML() {
   return '<div class="page-top"><div class="page-head"><h1>Where should we go?</h1>' +
@@ -24,6 +24,7 @@ export function placesHTML() {
           '<button type="button" class="vote yes" data-vote="1"><span class="v-ico" aria-hidden="true">♥</span><span class="v-lbl">Love it</span></button>' +
         '</div>' +
         '<p class="kbd-hint">Keyboard: <kbd>←</kbd> pass · <kbd>↑</kbd> maybe · <kbd>→</kbd> love it</p>' +
+        weatherPanelHTML() +
       '</div>' +
       '<div class="places-side">' +
       searchHTML() +
@@ -263,6 +264,7 @@ export function renderRanking() {
 }
 
 export function bindPlaces() {
+  renderWeatherPanel();
   renderDeck();
   renderRanking();
   // ✏️ Edit buttons on cards and in Group favourites

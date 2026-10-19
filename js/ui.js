@@ -8,6 +8,7 @@ import { updateStepper } from './router.js';
 import { renderBest, updateAllCells } from './times.js';
 import { dragActive, renderDeck, renderRanking, updateCardFriends, vote, voting } from './places.js';
 import { renderPlanCard, renderWaiting } from './bloom.js';
+import { renderWeatherPanel } from './weather.js';
 
 export function announce(msg) {
   const live = $('#live');
@@ -130,7 +131,7 @@ export function refresh() {
     updateStepper();
     if (state.step === 'times') { updateAllCells(); renderBest(); }
     if (state.step === 'places') {
-      renderRanking(); updateCardFriends();
+      renderRanking(); updateCardFriends(); renderWeatherPanel();
       // A friend's new suggestion should appear in the deck without interrupting a swipe.
       const shown = $$('#deck .card').map((c) => c.dataset.id).join(',');
       const want = allPlaces().slice(state.deckIndex, state.deckIndex + 3).map((p) => p.id).reverse().join(',');
