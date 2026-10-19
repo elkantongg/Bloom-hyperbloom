@@ -1,6 +1,6 @@
 // Step 2: swiping on places and suggesting new ones.
 import { $, $$, esc, reduceMotion } from './util.js';
-import { allPlaces, currentVotes, FRIEND_VOTES, googleLink, KINDS, PLACES, votedCount } from './data.js';
+import { allPlaces, commonsImage, commonsPage, currentVotes, FRIEND_VOTES, googleLink, KINDS, PLACES, votedCount } from './data.js';
 import { people, state, total } from './state.js';
 import { rankPlaces } from './derive.js';
 import { announce, avatarStack, buzz, namesList, refresh, sidebarHTML, toast } from './ui.js';
@@ -51,9 +51,14 @@ export function placesHTML() {
 export function cardHTML(pl, depth) {
   const top = depth === 0;
   return '<article class="card" data-id="' + pl.id + '" data-depth="' + depth + '" style="--depth:' + depth + ';--hue:' + pl.hue + '"' +
-    (top ? ' tabindex="0" aria-label="' + esc(pl.name + ', ' + pl.kind + ', ' + pl.price + ', ' + pl.dist + ' away. ' + pl.blurb + ' ' + pl.tags.join(', ')) + '"' : ' aria-hidden="true"') + '>' +
+    (top ? ' tabindex="0" aria-label="' + esc([pl.name, pl.kind, pl.price, pl.dist].filter(Boolean).join(', ') + '. ' + pl.blurb + ' ' + pl.tags.join(', ')) + '"' : ' aria-hidden="true"') + '>' +
     '<span class="stamp yes" aria-hidden="true">LOVE IT</span><span class="stamp no" aria-hidden="true">PASS</span><span class="stamp maybe" aria-hidden="true">MAYBE</span>' +
-    '<div class="card-art"><span aria-hidden="true">' + pl.emoji + '</span><span class="kind">' + esc(pl.kind) + '</span></div>' +
+    // Photo on top of a coloured gradient + emoji, which shows if the photo can't load.
+    '<div class="card-art"><span aria-hidden="true">' + pl.emoji + '</span>' +
+      (pl.photo ? '<img class="card-photo" src="' + esc(commonsImage(pl.photo)) + '" alt="" loading="lazy" draggable="false">' +
+        '<a class="photo-credit" href="' + esc(commonsPage(pl.photo)) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Photo: Wikimedia Commons<span class="sr-only"> (opens in a new tab)</span></a>'
+        : pl.map ? mapHTML(pl.map, top) : '') +
+      '<span class="kind">' + esc(pl.kind) + '</span></div>' +
     '<div class="card-body"><h3>' + esc(pl.name) + '</h3>' +
       (pl.price || pl.dist ? '<div class="meta">' + [pl.price, pl.dist].filter(Boolean).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') +
       '<p class="blurb">' + esc(pl.blurb) + '</p>' +
@@ -67,6 +72,30 @@ export function cardHTML(pl, depth) {
       (pl.outdoor ? '<div class="wx" data-wx hidden></div>' : '') +
       '<div class="card-friends" data-friends="' + pl.id + '"></div>' +
     '</div></article>';
+}
+
+// A small street map centred on the exact spot (OpenStreetMap tiles, free).
+// 3×2 tiles are laid out so the place sits in the middle, under a pin.
+export function mapHTML(pt, top) {
+  const z = 17, n = Math.pow(2, z);
+  const fx = (pt.lon + 180) / 360 * n;
+  const lat = pt.lat * Math.PI / 180;
+  const fy = (1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n;
+  const tx = Math.floor(fx), ty = Math.floor(fy);
+  const ox = (fx - tx) * 256, oy = (fy - ty) * 256; // where the place is inside its tile
+  let tiles = '';
+  for (let dy = -1; dy <= 0; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      tiles += '<img src="https://tile.openstreetmap.org/' + z + '/' + (tx + dx) + '/' + (ty + dy + (oy > 128 ? 1 : 0)) + '.png" alt="" loading="lazy" draggable="false" ' +
+        'style="left:' + ((dx + 1) * 256) + 'px;top:' + ((dy + 1) * 256) + 'px">';
+    }
+  }
+  // Shift the tile block so the place lands in the centre of the card art.
+  const px = 256 + ox, py = (oy > 128 ? oy - 256 : oy) + 256;
+  return '<div class="card-map" style="--px:' + px + 'px;--py:' + py + 'px">' + tiles + '</div>' +
+    '<span class="map-pin" aria-hidden="true">📍</span>' +
+    '<a class="photo-credit" href="https://www.openstreetmap.org/?mlat=' + pt.lat + '&mlon=' + pt.lon + '#map=18/' + pt.lat + '/' + pt.lon + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') +
+    '>Map © OpenStreetMap<span class="sr-only"> (opens in a new tab)</span></a>';
 }
 
 export function renderDeck() {
@@ -88,6 +117,7 @@ export function renderDeck() {
   }
   updateCardFriends();
   updateWeatherEls();
+  $$('#deck .card-photo').forEach((img) => img.addEventListener('error', () => img.remove()));
   bindDrag(deck.querySelector('.card[data-depth="0"]'));
 }
 
@@ -237,7 +267,8 @@ export async function saveSuggestion(name, kind, match) {
   if (label.length > 40) label = label.slice(0, 39) + '…';
   if (allPlaces().some((p) => p.name.toLowerCase() === label.toLowerCase())) { if (err) err.textContent = '“' + label + '” is already in the deck.'; return; }
   const details = match ? { area: match.area, address: match.address, category: match.category, price: match.price,
-    hours: match.hours, hoursText: match.hoursText, website: match.website, phone: match.phone } : null;
+    hours: match.hours, hoursText: match.hoursText, website: match.website, phone: match.phone,
+    photo: match.photo, lat: match.lat, lon: match.lon } : null;
   if (state.mode === 'live') {
     try {
       const data = await api('POST', '/groups/' + encodeURIComponent(state.group.id) + '/places', { name: label, kind: kind, details: details });

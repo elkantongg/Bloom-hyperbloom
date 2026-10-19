@@ -26,7 +26,7 @@ export function timesHTML() {
   grid += '</div>';
 
   return '<div class="page-top"><div class="page-head"><h1>When are you free?</h1>' +
-      '<p id="gridHelp">Drag across the hours that work for you. The brighter a square, the more friends are free. ' +
+      '<p id="gridHelp" class="one-line">Drag across the hours that work for you. The brighter a square, the more friends are free. ' +
       '<span class="sr-only">Keyboard: arrow keys move, Space or Enter toggles an hour, Shift plus an arrow paints as you move.</span></p></div>' +
     (state.mode === 'live'
       ? '<div class="invite"><span aria-hidden="true">🔗</span><span class="grow">Invite friends to <strong>' + esc(state.title) + '</strong> <code>' + esc(inviteLink()) + '</code>' +

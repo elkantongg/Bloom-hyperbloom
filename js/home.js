@@ -11,7 +11,7 @@ export function homeHTML() {
     '<section class="hero">' +
       '<div>' +
         '<h1>Watch your plan <em>Bloom</em></h1>' +
-        '<p class="lede">Paint when you’re free, swipe on where to go. Plans that actually happen.</p>' +
+        '<p class="lede">Paint when you’re free, swipe on where to go.</p>' +
         myGroupsHTML() +
         '<form class="start-card" id="startForm" novalidate>' +
           '<div class="field"><label for="planTitle">What’s the plan?</label>' +
@@ -29,6 +29,8 @@ export function homeHTML() {
       '</div>' +
       '<div class="hero-art" aria-hidden="true">' +
         heroMark() +
+        '<div class="floating f1">👋<div>Let’s meet up soon!<small>Who’s in?</small></div></div>' +
+        '<div class="floating f2">🗓️<div>When are you free?<small>Paint your hours</small></div></div>' +
         '<div class="floating f3">✨<div>Everyone’s free!<small>Sat 3–6pm</small></div></div>' +
       '</div>' +
     '</section>' +

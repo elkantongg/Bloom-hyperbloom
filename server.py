@@ -120,14 +120,38 @@ def osm_hours_to_week(spec):
 
 
 def price_text(e):
-    """Entry price if the map lists one: 'charge=49 SGD' -> 'S$49'; 'fee=no' -> 'Free'."""
-    charge = (e.get("charge") or "").strip()
-    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*SGD", charge)
-    if m:
-        return "S$" + m.group(1)
-    if charge:
-        return charge[:30]
-    return {"no": "Free entry", "yes": "Paid entry"}.get(e.get("fee"))
+    """A rough price tier, not an exact price (map prices go out of date):
+    free / $ (under S$15) / $$ (S$15–40) / $$$ (over S$40). None if unknown."""
+    if e.get("fee") == "no":
+        return "Free"
+    m = re.search(r"(\d+(?:\.\d+)?)", e.get("charge") or "")
+    if not m or "SGD" not in (e.get("charge") or "").upper():
+        return None
+    amount = float(m.group(1))
+    return "Free" if amount == 0 else "$" if amount < 15 else "$$" if amount <= 40 else "$$$"
+
+
+PHOTO_CACHE = {}  # wikidata id -> Commons file name (or "")
+
+
+def wikidata_photos(ids):
+    """Main photo (Wikidata P18, hosted on Wikimedia Commons) for each id. Free, no key."""
+    want = [i for i in dict.fromkeys(ids) if i and re.fullmatch(r"Q\d+", i) and i not in PHOTO_CACHE]
+    if want:
+        qs = urllib.parse.urlencode({"action": "wbgetentities", "ids": "|".join(want[:50]),
+                                     "props": "claims", "format": "json"})
+        req = urllib.request.Request("https://www.wikidata.org/w/api.php?" + qs, headers={"User-Agent": UA})
+        try:
+            with urllib.request.urlopen(req, timeout=6) as r:
+                entities = json.loads(r.read()).get("entities", {})
+        except (urllib.error.URLError, ValueError, TimeoutError, OSError) as e:
+            print(f"Photo lookup failed: {e}")
+            entities = {}
+        for i in want:
+            claims = (entities.get(i) or {}).get("claims", {}).get("P18", [])
+            snak = claims[0]["mainsnak"] if claims else {}
+            PHOTO_CACHE[i] = (snak.get("datavalue") or {}).get("value") or ""
+    return {i: PHOTO_CACHE.get(i, "") for i in ids if i}
 
 
 def matches_kind(row, kind):
@@ -175,6 +199,10 @@ def osm_lookup(query, kind):
             "hoursText": e.get("opening_hours"),
             "website": e.get("website") or e.get("contact:website") or e.get("url"),
             "phone": e.get("phone") or e.get("contact:phone"),
+            # Only a photo of THIS place counts (not the brand's photo of some other branch).
+            "wikidata": e.get("wikidata"),
+            "lat": round(float(row["lat"]), 6) if row.get("lat") else None,
+            "lon": round(float(row["lon"]), 6) if row.get("lon") else None,
         })
         # The same place is often mapped twice (e.g. a zoo and its entrance): keep the first.
         key = (out[-1]["name"].casefold(), (out[-1]["area"] or "").casefold())
@@ -184,6 +212,9 @@ def osm_lookup(query, kind):
         seen.add(key)
         if len(out) == 5:
             break
+    photos = wikidata_photos([r["wikidata"] for r in out])
+    for r in out:
+        r["photo"] = photos.get(r.pop("wikidata"), "") or None
     LOOKUP_CACHE[key] = (time.time(), out)
     if len(LOOKUP_CACHE) > 2000:
         LOOKUP_CACHE.pop(next(iter(LOOKUP_CACHE)))
@@ -198,10 +229,15 @@ def clean_details(d):
         return v.strip()[:n] if isinstance(v, str) and v.strip() else None
     def url(v):
         return v.strip()[:300] if isinstance(v, str) and re.match(r"https?://[^\s\"'<>]+$", v.strip()) else None
+    def coord(v, limit):
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and -limit <= v <= limit else None
     hours = d.get("hours") if isinstance(d.get("hours"), list) else []
     out = {"area": s(d.get("area"), 60), "address": s(d.get("address"), 200), "category": s(d.get("category"), 60),
-           "price": s(d.get("price"), 30), "hours": [h for h in (s(x, 60) for x in hours[:7]) if h],
-           "hoursText": s(d.get("hoursText"), 120), "website": url(d.get("website")), "phone": s(d.get("phone"), 30)}
+           "price": d.get("price") if d.get("price") in ("Free", "$", "$$", "$$$") else None, "hours": [h for h in (s(x, 60) for x in hours[:7]) if h],
+           "hoursText": s(d.get("hoursText"), 120), "website": url(d.get("website")), "phone": s(d.get("phone"), 30),
+           # A Wikimedia Commons file name; the browser builds the image URL from it.
+           "photo": s(d.get("photo"), 200) if isinstance(d.get("photo"), str) and "/" not in d.get("photo") else None,
+           "lat": coord(d.get("lat"), 90), "lon": coord(d.get("lon"), 180)}
     return out if any(out.values()) else None
 
 SCHEMA = """
