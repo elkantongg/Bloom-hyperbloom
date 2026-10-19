@@ -1,155 +1,475 @@
-# Bloom — plans that actually happen
+# Bloom — Plans That Actually Happen
 
-Don’t leave your plans in the bud. Make room for Bloom.
+**Don't leave your plans in the bud. Make room for Bloom.**
 
-## The problem
-Making plans with friends dies in the group chat: "when's everyone free?", "idk, you pick", 200 messages later, nothing happens. Existing tools (When2meet, polls) solve one piece, look dated, and don't make deciding *where* any easier.
+*Because “we should hang out sometime” deserves to become “see you there!”*
 
-## How it works
-1. **When** — drag across a week grid to paint your free hours. The grid is a live heatmap: brighter = more friends free. The best overlapping time is highlighted automatically.
-2. **Where** — swipe through place cards (right = yes, left = nope, up = maybe). Each card shows price, distance and accessibility info (e.g. step-free), plus which friends already said yes.
-3. **Bloom** — each person is a petal that opens as they add times and vote. When the group agrees, you get one clear plan card: when, where, who's coming — add it to your calendar or copy the invite to the group chat.
+Bloom is a collaborative group-planning platform that helps friends find common free time, discover places to go, and turn endless group-chat discussions into actual plans.
 
-## Accessibility & inclusive design
-- **Accessibility menu** (stickman in the header): bigger text, numbers on the grid (so colour is never the only signal), calm mode (no animation/confetti), high contrast. Saved per device.
-- Full keyboard support: roving-focus grid (arrow keys, Space to toggle, Shift+arrow to paint), ←/↑/→ to vote, Esc closes menus.
-- Screen-reader labels on every grid cell ("Saturday 3pm. You're free. 5 of 5 free: Maya, Jun, Priya, Sam"), live announcements when friends join, milestones and votes.
-- 44px+ touch targets, visible focus rings, light/dark themes, respects `prefers-reduced-motion`, step-free access shown on every place card.
-- Responsive down to 375px phones with touch drag-to-paint and swipe.
+No more scheduling headaches, unanswered messages, or forgotten hangouts.
 
-## Design decisions (the psychology behind it)
-| Principle | Where it shows up |
+---
+
+## The Problem
+
+Planning a group outing should be exciting. Instead, it often looks something like this:
+
+- “When is everyone free leh?”
+- “I'm ok with anything.”
+- “Where should we go?”
+- “Let's decide another day bah.”
+
+And somehow, another day never comes.
+Traditional scheduling tools focus on availability, while polls focus on preferences. But planning a successful outing requires both.
+
+**Bloom brings everything together in one place.**
+
+## How Bloom Works
+
+Bloom simplifies group planning into three steps.
+
+### 1. WHEN — Find Your Common Free Time
+
+- Paint your available hours onto an interactive weekly calendar.
+- See everyone's availability through a collaborative heatmap.
+- Identify overlapping time slots automatically.
+- Find suitable meeting times without endless messages.
+
+### 2. WHERE — Discover and Decide Together
+
+- Search for restaurants, cafés, shops, and activities across Singapore.
+- Discover venues through an OpenStreetMap-powered search engine.
+- Swipe right to **Love It**, left to **Pass**, or up for **Maybe**.
+- Suggest custom places and activities.
+- See which places your friends prefer.
+- Identify group favourites through collective voting.
+
+### 3. BLOOM — Watch Your Plans Come Together
+
+- See your group's planning progress represented by a blooming flower.
+- Receive a suggested plan based on availability and preferences.
+- View the confirmed date, time, venue, and participants.
+- Check the weather forecast for your outing.
+- Export the plan to your calendar.
+- Copy and share the final invitation.
+
+**Less back-and-forth. More getting together.**
+
+---
+
+## Key Features
+
+| Feature | Description |
 |---|---|
-| **One clear next step** (Hick's law) | A sticky action bar on every screen holds exactly one primary button, placed in the thumb zone. |
-| **Show, don't tell** | A first-time coach mark shows a hand dragging down the grid; the first card wiggles to teach swiping. |
-| **Goal-gradient effect** | The bloom meter and "4 of 6 swiped — almost there!" make progress visible, so people finish. |
-| **Endowed progress** | Joining already opens your petal a little; a new group shows "🌱 just planted", not "0%". |
-| **Social proof** | "Maya and Jun love this" on each card; live toasts when friends join. |
-| **Low-stakes choices** | "Pass" is a calm grey instead of an alarming red ✕, "Love it" is the bright primary, and Undo is always one tap away. |
-| **Reward moments** | Milestones ("✨ First match!", "🎉 Everyone's free Saturday 3–6pm!"), haptics on phones, and confetti on the final plan. |
-| **Colour meaning** | Pink = social/primary action, gold = "best"/reward, green = done/success, grey = neutral. |
-| **Reassuring words** | "No sign-ups · Free · About 2 minutes", "You can change these anytime", "There are no wrong answers". |
-| **Gentle nudges** | The final screen lists who you're waiting on and copies a friendly reminder for the group chat. |
+| Collaborative availability | Interactive calendar showing overlapping free time |
+| Group voting | Swipe-based decisions for restaurants and activities |
+| Smart place discovery | Singapore venue search with typo tolerance |
+| Branch discovery | Find different outlets of restaurants and retail chains |
+| Group favourites | Rank suggestions using everyone's preferences |
+| Bloom progress | Visualise group participation through an animated flower |
+| Weather forecasts | View conditions for your planned outing |
+| Group invitations | Share private invitation links and group passwords |
+| Calendar integration | Export confirmed plans as calendar events |
+| Accessibility | Keyboard support, contrast settings, reduced motion and more |
+| Demo mode | Explore Bloom with simulated friends without saving data |
 
-## Groups, invites & passwords
-1. Create a group with a title, your name and a **group password**.
-2. Copy the invite link (e.g. `http://localhost:5178/#/join/AbC123xy`) and send it to friends — send the password separately.
-3. Friends opening the link see *"Alex is inviting you to Weekend hangout"*, enter their name + the password, and join.
-4. Everyone in the group sees each other's availability and votes; changes sync every few seconds.
+---
 
-No user accounts are needed. Passwords are stored hashed (PBKDF2), each person gets a private session token, and 5 wrong passwords lock that device out for 60 seconds. There's also a **demo mode** with simulated friends for trying it alone.
+## Technology Stack
 
-## Backend & database
-- `server.py` — a small Python server (standard library only, nothing to install). It serves the site and a JSON API.
-- **SQLite** database at `data/bloom.db`, created automatically on first run. No sign-up or login needed.
-  - Tables: `groups` (title, host, week, hashed password) and `members` (name, colour, availability, votes).
-  - View it in VS Code with the **SQLite Viewer** extension (click `data/bloom.db`), or in the terminal: `sqlite3 data/bloom.db "SELECT name, avail, votes FROM members;"`
-  - The database is git-ignored, so private group data is never committed.
+| Layer | Technology |
+|---|---|
+| Frontend | HTML5, CSS3, Vanilla JavaScript |
+| Backend | Python |
+| Database | Supabase PostgreSQL |
+| Database driver | psycopg |
+| Place discovery | OpenStreetMap, Overpass API, Photon |
+| Place search | Local searchable index, fuzzy matching and RapidFuzz (optional) |
+| Place details | OpenStreetMap / Nominatim |
+| Weather | Open-Meteo API |
+| Version control | Git and GitHub |
 
-| Method | Path | What it does |
-|---|---|---|
-| POST | `/api/groups` | Create a group (title, name, password) |
-| GET | `/api/groups/{id}/invite` | Public invite preview: title, host, member count |
-| POST | `/api/groups/{id}/join` | Join with name + password, returns a session token |
-| GET | `/api/groups/{id}/state` | Everyone's availability and votes (members only) |
-| PUT | `/api/groups/{id}/me` | Save your availability / votes (members only) |
+Bloom uses native JavaScript modules without requiring a frontend framework or build step.
 
-## APIs
-- **[Open-Meteo](https://open-meteo.com/)** weather forecast API (free, no key, no sign-in). While you swipe on places, a small weather card under the deck shows the forecast for the chosen time, with a tip like "Rain likely — indoor ideas are the safer bet". The plan card shows it too, and outdoor places warn you when rain is likely. Weather data by Open-Meteo.com (CC BY 4.0).
+### System Architecture
 
-## Place search (free, OpenStreetMap)
-"Got another idea?" searches Singapore venues without any paid API:
+```text
+                 BLOOM
+              Web Frontend
+           HTML / CSS / JS
+                    |
+                    v
+              Python Server
+                server.py
+                    |
+          +---------+---------+
+          |                   |
+          v                   v
+    Supabase PostgreSQL   Place Discovery
+          |                   |
+    Groups & members    Local OSM Index
+    Availability        Photon
+    Votes & places      Nominatim
+                              |
+                         OpenStreetMap
 
-- **Local place index** (`placesearch.py`, data in `search/sg-places.json.gz`): about every named
-  restaurant, café, shop, mall and activity in Singapore, downloaded once from the
-  [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) inside Singapore's real
-  boundary. It's searched in memory, so it's instant and makes no network calls per keystroke.
-  - Typos, punctuation and spacing don't matter: *Macdonalds*, *mac donalds*, *MCDONALDS* → McDonald's (with "Did you mean…?").
-  - Every branch is listed with its mall, unit, street or area ("McDonald's — 118 branches in Singapore").
-  - Locations rank first: *McDonalds Tampines*, *Sephora Orchard*, *Din Tai Fung at Paragon*.
-  - Category words work: *bubble tea Bugis*, *pottery workshop*, *ramen*, *escape room*.
-  - Shows 10 at a time with **Show more results**. Card details (hours, website, phone) come from the index too.
-- **[Photon](https://photon.komoot.io/)** (live OpenStreetMap search) fills gaps the index doesn't keep,
-  such as buildings and blocks. To respect its fair-use policy it's only called when the index
-  doesn't already have a strong answer, and it backs off automatically when busy.
-  Set `BLOOM_PHOTON_MODE=always` or `off` to change this.
-- **[Nominatim](https://nominatim.org/)** is only used for details of Photon-only results (max 1 request/second).
-
-Map data © OpenStreetMap contributors, available under the [ODbL](https://www.openstreetmap.org/copyright).
-
-### Refresh the place index
-Run this every few weeks (it takes a few minutes and makes 3 Overpass requests):
+    Weather forecasts: Open-Meteo
 ```
+
+The Python backend manages group authentication, application logic, database access, and place-search endpoints.
+
+Supabase provides the hosted PostgreSQL database for persistent group data.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3
+- A Supabase PostgreSQL project
+- Git
+- Node.js and npm (optional, for the `npm start` shortcut)
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/elkantongg/Bloom-hyperbloom.git
+cd Bloom-hyperbloom
+```
+
+### 2. Create a Python Virtual Environment
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+PostgreSQL support requires `psycopg`, including connection-pooling support.
+
+RapidFuzz is used to accelerate fuzzy place-name matching when installed.
+
+### 4. Configure Supabase
+
+Create a `.env` file in the project root.
+
+```env
+DATABASE_URL=your-supabase-postgresql-connection-string
+```
+
+Replace the placeholder with your PostgreSQL connection URI from the Supabase dashboard.
+
+For IPv4 networks, Supabase's Session Pooler is an available alternative to a direct database connection.
+
+**Security:** Never commit `.env`, database passwords, or credentials to GitHub. Each developer should configure their own database connection.
+
+### 5. Start Bloom
+
+```bash
+npm start
+```
+
+Alternatively:
+
+```bash
+python3 server.py
+```
+
+Open:
+
+**http://localhost:5178**
+
+On initial startup, the PostgreSQL backend initialises the required database tables if they do not already exist.
+
+The application requires a valid `DATABASE_URL`; it does not silently fall back to SQLite.
+
+---
+
+## Database — Supabase PostgreSQL
+
+Bloom uses Supabase's hosted PostgreSQL database to store information for real groups.
+
+### Database Tables
+
+| Table | Purpose |
+|---|---|
+| `groups` | Group details, planning dates and hashed passwords |
+| `members` | Member information, session-token hashes, availability and votes |
+| `places` | User-added venues, categories and place details |
+
+### Database Security
+
+- Group passwords use PBKDF2 hashing.
+- Session tokens are validated by the backend, with token hashes stored in the database.
+- Database credentials remain on the Python server.
+- Database operations use parameterised queries.
+- Transactions help prevent partially saved operations.
+- Concurrent operations are handled with appropriate database locking.
+- Row Level Security (RLS) is enabled on application tables without public access policies.
+- Browser users do not require direct access to Supabase database tables.
+
+Bloom currently uses its own group-password and session-token system rather than Supabase Auth.
+
+### SQLite Migration
+
+Bloom originally used SQLite for local data storage.
+The repository includes `migrate_sqlite_to_postgres.py` for copying data from the previous SQLite database to PostgreSQL.
+
+A dry run can be performed with:
+
+```bash
+python3 migrate_sqlite_to_postgres.py
+```
+
+The script supports an explicitly confirmed `--apply` mode for performing the migration.
+Existing SQLite databases should be retained as backups until migration results have been verified.
+
+---
+
+## 🔎 Singapore Place Discovery
+
+Bloom uses free and open-source geographic data to help groups discover venues across Singapore.
+
+### 1. Local OpenStreetMap Place Index
+
+`placesearch.py` provides a searchable index of venues mapped in OpenStreetMap.
+The index is built from data retrieved using the Overpass API and stored locally in:
+
+```text
+search/sg-places.json.gz
+```
+
+It supports:
+
+- Fuzzy matching and common spelling variations
+- Case-insensitive searching
+- Punctuation and spacing normalisation
+- Restaurant and retail-chain branch discovery
+- Location-aware ranking
+- Category-based venue searches
+- Paginated search results
+
+For example:
+
+| Search | Intended matching behaviour |
+|---|---|
+| `Macdonalds` | Match McDonald's |
+| `McDonalds Tampines` | Prioritise Tampines branches |
+| `Sephora Orchard` | Prioritise relevant Orchard outlets |
+| `Din Tai Fung` | Find indexed branches |
+| `Bubble tea Bugis` | Find relevant beverage shops |
+
+Results depend on the coverage and freshness of the underlying OpenStreetMap data. Bloom does not guarantee a complete directory of Singapore businesses.
+
+### 2. Photon API
+
+Photon supplements the local index with live OpenStreetMap-based search where needed.
+This can help with locations or features not covered by the locally indexed venue data.
+
+### 3. Nominatim
+
+Nominatim retrieves additional details for supported OpenStreetMap results.
+Requests must respect the public service's usage policy and rate limits.
+
+### Refreshing the Place Index
+
+To rebuild the local venue index:
+
+```bash
 python3 placesearch.py build
 ```
-If the main Overpass server is busy it tries mirrors with backoff. To choose servers, set
-`BLOOM_OVERPASS=https://url1/api/interpreter,https://url2/api/interpreter`. A running server
-picks up the new file automatically. Without the file, search falls back to Photon only.
 
-Try it in the terminal: `python3 placesearch.py search "macdonalds tampines"`
+To test a venue search:
 
-Optional speed-up: `pip install -r requirements.txt` installs RapidFuzz (results are the same without it).
-
-### Tests
+```bash
+python3 placesearch.py search "macdonalds tampines"
 ```
+
+The index can be refreshed periodically to incorporate updated OpenStreetMap information.
+
+Public Overpass, Photon, and Nominatim instances are shared services with usage restrictions. Larger deployments may require a separately hosted or appropriately provisioned service.
+
+### Optional Google Places Integration
+
+The backend includes optional Google Places functionality, but it is not required for Bloom's free OpenStreetMap search.
+Google Places requires separate API credentials and may incur usage charges.
+
+---
+
+## 🌦️ Weather Integration
+
+Bloom uses the **Open-Meteo API** to display weather forecasts for planned outings.
+
+Features include:
+
+- Hourly temperature forecasts
+- Probability of precipitation
+- Weather condition indicators
+- Warnings for outdoor activities when rain is likely
+- Optional location-based forecasts
+
+Weather information is displayed alongside the final group plan.
+Weather data is provided by Open-Meteo.
+Forecast accuracy and availability depend on the API and forecast horizon.
+
+---
+
+## ♿ Accessibility and Inclusive Design
+
+Bloom aims to make group planning approachable and accessible.
+
+Features include:
+
+- Light and dark themes
+- Adjustable text sizes
+- High-contrast settings
+- Reduced-motion options
+- Keyboard navigation
+- Screen-reader announcements
+- Accessible calendar interaction
+- Visual progress indicators
+- Touch-friendly controls
+- Responsive layouts for mobile devices
+
+Bloom also incorporates interaction-design principles including Hick's Law, social proof, goal-gradient effects, progressive disclosure, and feedback through visual cues.
+These features aim to reduce cognitive load and encourage group participation.
+
+---
+
+## Testing
+
+Bloom includes automated tests for its backend and place-search functionality.
+
+Run:
+
+```bash
 python3 -m unittest discover tests
 ```
 
-## Place search with Google (optional, paid)
-With a Google Places API key, "Got another idea?" works like a mini Google Maps:
-suggestions as you type (with typo correction), the exact place's real photo,
-rating, price tier, today's hours, and an "Open in Google Maps" link.
+Database integration tests require a dedicated PostgreSQL test database configured through `TEST_DATABASE_URL`.
 
-1. In Google Cloud Console, enable **Places API (New)** and create an API key
-   (restrict it to Places API (New)). Google requires a billing account; check
-   its current pricing and free usage allowance.
-2. Create a `.env` file in this folder (it is git-ignored):
-   ```
-   GOOGLE_PLACES_API_KEY=your-key-here
-   ```
-3. Restart with `npm start`. The terminal shows which place search is active.
+Tests cover areas including:
 
-The key stays on the server; the browser only talks to `/api/places/*`, which is
-rate-limited per person. Without a key, Bloom uses OpenStreetMap search instead.
+- Group creation and joining
+- Password verification
+- Session validation
+- Availability updates
+- Place suggestions and voting
+- Database persistence
+- Transaction rollback
+- Concurrent group membership
+- SQLite migration safety
+- Fuzzy search and branch matching
 
-## Project structure
-```
-index.html        page shell (header, nav, accessibility menu)
-styles.css        all styling, light/dark themes
-server.py         Python server: serves the site + JSON API, SQLite database
-placesearch.py    Singapore place index: build from OpenStreetMap + typo-tolerant search
-search/           the built index (sg-places.json.gz)
-tests/            place search tests (python3 -m unittest discover tests)
-js/
-  main.js         entry point: starts everything in order
-  state.js        the shared app state (+ demo friends)
-  router.js       which screen is showing, navigation, re-renders
-  home.js         landing page + create-a-group form
-  times.js        step 1: painting free hours
-  places.js       step 2: swiping + suggesting places
-  bloom.js        step 3: final plan, calendar file, nudges
-  live.js         live groups: API calls, sync, invites, joining
-  derive.js       best times, place rankings, bloom score
-  ui.js           toasts, avatars, flower, side panel, milestones
-  settings.js     accessibility options, page size, theme, home nav
-  search.js       place search: type, autocomplete, did-you-mean, show more, custom places
-  edit.js         edit a suggested idea (name, type, price, hours, notes, link)
-  weather.js      forecast (Open-Meteo)
-  data.js         built-in places + group suggestions
-  dates.js        the planning week and date formatting
-  util.js         tiny shared helpers
-```
-The browser loads these as native ES modules, so there is no build step.
+Tests should run against a dedicated test database, never the production Supabase database.
 
-## Tech
-Plain HTML, CSS and JavaScript on the front end (no build step); Python + SQLite on the back end. Polling pauses when the tab is hidden to save battery and CPU.
+---
 
-Run locally (from this folder):
+## 📁 Project Structure
+
+```text
+Bloom-hyperbloom/
+│
+├── index.html
+├── styles.css
+├── server.py
+├── bloomdb.py
+├── placesearch.py
+├── migrate_sqlite_to_postgres.py
+│
+├── db/
+│   └── schema.sql
+│
+├── js/
+│   ├── main.js
+│   ├── home.js
+│   ├── times.js
+│   ├── places.js
+│   ├── bloom.js
+│   ├── search.js
+│   ├── live.js
+│   ├── state.js
+│   ├── router.js
+│   ├── derive.js
+│   ├── weather.js
+│   └── ...other modules
+│
+├── search/
+│   └── sg-places.json.gz
+│
+├── tests/
+│
+├── requirements.txt
+├── package.json
+├── .gitignore
+├── README.md
+│
+└── .env
+    (local only, not committed)
 ```
-npm start
-```
-or, without npm:
-```
-python3 server.py
-```
-then open http://localhost:5178. Press Ctrl+C in the terminal to stop.
+
+### Important Files
+
+| File | Purpose |
+|---|---|
+| `server.py` | HTTP server and application API |
+| `bloomdb.py` | PostgreSQL connections and database utilities |
+| `db/schema.sql` | PostgreSQL database schema |
+| `placesearch.py` | Singapore venue index and fuzzy search |
+| `migrate_sqlite_to_postgres.py` | Migration from SQLite |
+| `js/times.js` | Availability selection |
+| `js/places.js` | Place cards and voting |
+| `js/bloom.js` | Final plan generation |
+| `js/search.js` | Place-search interface |
+| `js/weather.js` | Weather forecasts |
+
+---
+
+## 🔐 Security Considerations
+
+Bloom uses group passwords and private session tokens to restrict access to group information.
+The Python backend handles authorization, while Supabase provides persistent database storage.
+Before production deployment, database credentials, group-access controls, rate limiting, API permissions, and privacy requirements should be reviewed and tested.
+A production deployment should also use HTTPS and appropriate operational monitoring.
+
+---
+
+## 🌷 Future Improvements
+
+Potential future developments include:
+
+- User accounts and saved groups
+- Push notifications
+- More personalised activity recommendations
+- Enhanced place and location filtering
+- Improved map integration
+- More sophisticated weather-aware recommendations
+- Calendar-service integration
+- Expanded search coverage beyond Singapore
+
+---
+
+## 📚 Data Sources and Acknowledgements
+
+- **OpenStreetMap contributors** — geographic and venue information, licensed under the Open Database License (ODbL)
+- **Photon** — OpenStreetMap-based place search
+- **Overpass API** — OpenStreetMap data queries
+- **Nominatim** — additional OpenStreetMap place details
+- **Open-Meteo** — weather forecasts
+- **Supabase** — hosted PostgreSQL infrastructure
+
+Map data © OpenStreetMap contributors.
+
+---
+
+### Bloom
+
+**Don't leave your plans in the bud. Make room for Bloom.**
+
+*Because the best memories begin when plans actually happen.*
