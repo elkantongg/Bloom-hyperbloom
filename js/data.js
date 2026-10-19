@@ -1,0 +1,46 @@
+// Built-in place ideas plus the group's own suggestions.
+import { $, $$ } from './util.js';
+import { people, state } from './state.js';
+
+export const PLACES = [
+  { id: 'noodle', name: 'Lantern Noodle Bar', kind: 'Dinner', emoji: '🍜', price: '$$', dist: '1.2 km', blurb: 'Hand-pulled noodles and big shared tables.', tags: ['Step-free', 'Veg options'], hue: '#FFC48A' },
+  { id: 'bowling', name: 'Strike Social', kind: 'Bowling', emoji: '🎳', price: '$$', dist: '3.4 km', blurb: 'Retro lanes, arcade machines and milkshakes.', tags: ['Step-free', 'Groups of 6+'], hue: '#A9C4FF' },
+  { id: 'picnic', name: 'Botanic Gardens Picnic', kind: 'Outdoors', emoji: '🧺', price: 'Free', dist: '2.0 km', blurb: 'Bring snacks, find a shady lawn, stay till sunset.', tags: ['Free', 'Weather-dependent'], hue: '#A8E6B4', outdoor: true },
+  { id: 'escape', name: 'Clockwork Escape Room', kind: 'Activity', emoji: '🔐', price: '$$$', dist: '4.1 km', blurb: '60 minutes to escape a locked inventor’s study.', tags: ['Max 6 people', 'Book ahead'], hue: '#D2B8FF' },
+  { id: 'karaoke', name: 'Echo Box Karaoke', kind: 'Karaoke', emoji: '🎤', price: '$$', dist: '2.7 km', blurb: 'Private rooms, 5,000+ songs, zero judgement.', tags: ['Private room', 'Open late'], hue: '#FFB0D2' },
+  { id: 'cafe', name: 'Paper Crane Board Game Café', kind: 'Café', emoji: '🎲', price: '$', dist: '0.8 km', blurb: '300 board games, waffles and quiet corners.', tags: ['Quiet', 'Step-free'], hue: '#FFE08A' },
+];
+
+// Types for places the group suggests themselves.
+export const KINDS = {
+  food: { label: 'Food', emoji: '🍽️', hue: '#FFC48A' },
+  drinks: { label: 'Drinks', emoji: '🧋', hue: '#FFB0D2' },
+  activity: { label: 'Activity', emoji: '🎯', hue: '#A9C4FF' },
+  other: { label: 'Something else', emoji: '✨', hue: '#D2B8FF' },
+};
+export function customPlace(c) {
+  const k = KINDS[c.kind === 'outdoors' ? 'activity' : c.kind] || KINDS.other;
+  const by = c.addedBy === state.me.id ? 'you' : ((state.friends.find((f) => f.id === c.addedBy) || {}).name || 'a friend');
+  const d = c.details || null; // the place the person confirmed from the list, if any
+  return { id: c.id, q: c.name, name: c.name, kind: (d && d.category) || k.label, emoji: k.emoji, hue: k.hue,
+    price: (d && d.price) || '', dist: (d && d.area) || '',
+    hoursToday: d ? (todaysHours(d.hours) || d.hoursText || '') : '',
+    website: d && /^https?:\/\//.test(d.website || '') ? d.website : '',
+    blurb: d && d.address ? d.address + ' · Suggested by ' + by + '.' : 'Suggested by ' + by + '. Tap the Google link to check hours, prices and reviews.',
+    tags: [], custom: true, addedBy: c.addedBy };
+}
+// Map hours are listed Monday-first: "Monday: 08:30 – 18:00".
+export function todaysHours(lines) {
+  if (!lines || lines.length !== 7) return '';
+  return (lines[(new Date().getDay() + 6) % 7] || '').replace(/^[^:]+:\s*/, '');
+}
+// Everything in the deck: built-in ideas first, then the group's own suggestions.
+export function allPlaces() { return PLACES.concat(state.custom.map(customPlace)); }
+export const googleLink = (pl) => 'https://www.google.com/search?q=' + encodeURIComponent(pl.q || pl.name);
+
+export const FRIEND_VOTES = {
+  maya: { noodle: 1, bowling: 0, picnic: 1, escape: -1, karaoke: 1, cafe: 1 },
+  jun: { noodle: 1, bowling: 1, picnic: -1, escape: 1, karaoke: 1, cafe: 0 },
+  priya: { noodle: 0, bowling: -1, picnic: 1, escape: 1, karaoke: 0, cafe: 1 },
+  sam: { noodle: 1, bowling: 1, picnic: 0, escape: -1, karaoke: 1, cafe: 1 },
+};

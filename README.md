@@ -57,6 +57,30 @@ No user accounts are needed. Passwords are stored hashed (PBKDF2), each person g
 ## APIs
 - **[Open-Meteo](https://open-meteo.com/)** weather forecast API (free, no key, no sign-in). The plan card shows the forecast for the chosen time, and outdoor places warn you when rain is likely. Weather data by Open-Meteo.com (CC BY 4.0).
 
+## Project structure
+```
+index.html        page shell (header, nav, accessibility menu)
+styles.css        all styling, light/dark themes
+server.py         Python server: serves the site + JSON API, SQLite database
+js/
+  main.js         entry point: starts everything in order
+  state.js        the shared app state (+ demo friends)
+  router.js       which screen is showing, navigation, re-renders
+  home.js         landing page + create-a-group form
+  times.js        step 1: painting free hours
+  places.js       step 2: swiping + suggesting places
+  bloom.js        step 3: final plan, calendar file, nudges
+  live.js         live groups: API calls, sync, invites, joining
+  derive.js       best times, place rankings, bloom score
+  ui.js           toasts, avatars, flower, side panel, milestones
+  settings.js     accessibility options, page size, theme, home nav
+  weather.js      forecast (Open-Meteo)
+  data.js         built-in places + group suggestions
+  dates.js        the planning week and date formatting
+  util.js         tiny shared helpers
+```
+The browser loads these as native ES modules, so there is no build step.
+
 ## Tech
 Plain HTML, CSS and JavaScript on the front end (no build step); Python + SQLite on the back end. Polling pauses when the tab is hidden to save battery and CPU.
 

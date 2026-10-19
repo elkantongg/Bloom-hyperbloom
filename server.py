@@ -41,10 +41,10 @@ HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "5178"))
 
 # Only these files are served, so the database and server code are never exposed.
+JS_FILE = re.compile(r"/js/[a-z]+\.js")  # only plain module names, so no ../ tricks
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
-    "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/icon.svg": ("icon.svg", "image/svg+xml"),
     "/favicon.ico": ("icon.svg", "image/svg+xml"),
@@ -376,9 +376,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.lookup(q.get("q", [""])[0], q.get("kind", [""])[0])
         if path.startswith("/api/"):
             return self.api("GET", path)
-        if path not in STATIC:
+        if path in STATIC:
+            name, ctype = STATIC[path]
+        elif JS_FILE.fullmatch(path) and os.path.isfile(os.path.join(ROOT, path.lstrip("/"))):
+            name, ctype = path.lstrip("/"), "text/javascript; charset=utf-8"  # front-end modules in js/
+        else:
             return self.send_json(404, {"error": "Not found"})
-        name, ctype = STATIC[path]
         with open(os.path.join(ROOT, name), "rb") as f:
             data = f.read()
         self.send_response(200)
