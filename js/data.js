@@ -29,6 +29,8 @@ export function customPlace(c) {
   const d = c.details || null; // the place the person confirmed from the list, if any
   const g = !!(d && d.source === 'google');
   const ln = !!(d && d.source === 'link'); // added from a pasted link
+  const suffix = d && d.area ? ' (' + d.area + ')' : '';
+  const activityName = suffix && c.name.endsWith(suffix) ? c.name.slice(0, -suffix.length) : c.name;
   return { id: c.id, q: c.name, name: c.name, kind: (d && d.category) || k.label, emoji: k.emoji, hue: k.hue,
     price: (d && d.price) || '', dist: g ? '' : (d && d.area) || '',
     // Only a photo of this exact place (from Google, or the free map's own photo);
@@ -37,12 +39,12 @@ export function customPlace(c) {
     photoUrl: g && d.photoRef ? '/api/places/photo?name=' + encodeURIComponent(d.photoRef) : ln && /^https:\/\//.test(d.image || '') ? d.image : '',
     photoCredit: g && d.photoRef ? 'Photo: ' + (d.photoBy || 'Google') + ' · Google' : ln && d.image ? 'Image: ' + (d.siteName || 'linked page') : '',
     photoCreditUrl: g && d.photoRef ? d.photoByUrl || d.mapsUrl || '' : ln ? d.website || '' : '',
-    link: d && d.mapsUrl ? d.mapsUrl : ln && /^https?:\/\//.test(d.website || '') ? d.website : '',
-    linkLabel: ln ? 'Open link' : d && d.mapsUrl ? 'Open in Google Maps' : '',
+    link: d && d.source === 'manual' ? (d.area ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(d.area) : 'https://www.google.com/search?q=' + encodeURIComponent(activityName)) : d && d.mapsUrl ? d.mapsUrl : ln && /^https?:\/\//.test(d.website || '') ? d.website : '',
+    linkLabel: d && d.source === 'manual' ? (d.area ? 'Search venue in Google Maps' : 'Search on Google') : ln ? 'Open link' : d && d.mapsUrl ? 'Open in Google Maps' : '',
     map: d && typeof d.lat === 'number' && typeof d.lon === 'number' ? { lat: d.lat, lon: d.lon } : null,
     hoursToday: d ? (todaysHours(d.hours) || d.hoursText || '') : '',
-    website: !ln && d && /^https?:\/\//.test(d.website || '') ? d.website : '',
-    blurb: d && d.description ? d.description + ' · Suggested by ' + by + '.' : d && d.address && d.address !== d.area ? d.address + ' · Suggested by ' + by + '.' : d && d.address ? 'Suggested by ' + by + '.' : 'Suggested by ' + by + '. Tap the Google link to check hours, prices and reviews.',
+    website: d && d.source === 'manual' ? 'https://www.google.com/search?q=' + encodeURIComponent(activityName) : !ln && d && /^https?:\/\//.test(d.website || '') ? d.website : '',
+    blurb: d && d.source === 'manual' ? [d.address, d.description, 'Suggested by ' + by + '.'].filter(Boolean).join(' · ') : d && d.description ? d.description + ' · Suggested by ' + by + '.' : d && d.address && d.address !== d.area ? d.address + ' · Suggested by ' + by + '.' : d && d.address ? 'Suggested by ' + by + '.' : 'Suggested by ' + by + '. Tap the Google link to check hours, prices and reviews.',
     tags: d ? [d.stepFree && 'Step-free', d.rating && '⭐ ' + Number(d.rating).toFixed(1) + (d.reviews ? ' (' + Number(d.reviews).toLocaleString() + ')' : ''),
       d.openNow === true && 'Open now', d.reservable && 'Takes reservations'].filter(Boolean) : [],
     custom: true, addedBy: c.addedBy };

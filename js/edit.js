@@ -36,7 +36,7 @@ export function openEditor(id) {
     '<form method="dialog" class="edit-form" id="editForm" novalidate>' +
       '<h2>Edit idea</h2>' +
       '<p class="hint">Friends will see your changes on their card.</p>' +
-      field('edName', 'Name', '<input id="edName" maxlength="40" required value="' + esc(c.name) + '">') +
+      field('edName', 'Name', '<input id="edName" required value="' + esc(c.name) + '">') +
       '<div class="edit-two">' +
         field('edKind', 'Type', '<select id="edKind">' + Object.keys(KINDS).map((k) =>
           '<option value="' + k + '"' + (k === kind ? ' selected' : '') + '>' + KINDS[k].emoji + ' ' + KINDS[k].label + '</option>').join('') + '</select>') +
@@ -45,9 +45,8 @@ export function openEditor(id) {
       '</div>' +
       field('edCategory', 'What is it?', '<input id="edCategory" maxlength="60" placeholder="e.g. Laser tag arena" value="' + esc(d.category || '') + '">') +
       field('edDesc', 'Notes', '<textarea id="edDesc" maxlength="200" rows="2" placeholder="e.g. Book 2 days ahead, groups of 6+">' + esc(d.description || '') + '</textarea>') +
-      field('edAddress', 'Address or area', '<input id="edAddress" maxlength="200" value="' + esc(d.address || '') + '">') +
-      field('edHours', 'Opening hours', '<input id="edHours" maxlength="120" placeholder="e.g. 10am – 10pm daily" value="' + esc(d.hoursText || '') + '">') +
-      field('edLink', 'Link', '<input id="edLink" type="url" inputmode="url" maxlength="500" placeholder="Website, booking or Google Maps link" value="' + esc(d.website || '') + '">') +
+      field('edHours', 'Opening hours', '<input id="edHours" maxlength="120" placeholder="e.g. Weekdays 10am–8pm; weekends 11am–10pm" value="' + esc(d.hoursText || '') + '">') +
+      field('edLink', 'Quick link', '<input id="edLink" type="url" inputmode="url" maxlength="500" placeholder="Website, booking or Google Maps link" value="' + esc(d.website || '') + '">') +
       '<p class="form-error" id="edError" role="alert"></p>' +
       '<div class="edit-actions"><button type="submit" class="btn">Save changes</button>' +
         '<button type="button" class="btn ghost" id="edCancel">Cancel</button></div>' +
@@ -73,7 +72,7 @@ async function save(c, dlg) {
   if (link && !/^https?:\/\//i.test(link)) link = 'https://' + link;
   const edits = {
     category: $('#edCategory').value.trim(), price: $('#edPrice').value,
-    description: $('#edDesc').value.trim(), address: $('#edAddress').value.trim(),
+    description: $('#edDesc').value.trim(),
     hoursText: $('#edHours').value.trim(), website: link,
   };
   if (state.mode === 'live') {

@@ -217,7 +217,7 @@ def photon_query(text, kind):
     for f in features:
         p = f.get("properties") or {}
         key, value = p.get("osm_key"), p.get("osm_value")
-        if not p.get("name") or key in SKIP_KEYS or not p.get("osm_id") or not matches_kind(key, value, kind):
+        if not p.get("name") or key in SKIP_KEYS or not p.get("osm_id"):
             continue
         street = " ".join(x for x in (p.get("housenumber"), p.get("street")) if x)
         area = p.get("district") or p.get("locality") or p.get("city")
@@ -227,14 +227,15 @@ def photon_query(text, kind):
             continue
         seen.add(dup)
         out.append({"placeId": f"osm:{p.get('osm_type')}{p['osm_id']}", "main": p["name"],
-                    "category": nice_label(value), "secondary": where})
-        if len(out) == 6:
-            break
-    return out
+                    "category": nice_label(value), "secondary": where,
+                    "categoryMatch": matches_kind(key, value, kind)})
+    # Keep other categories discoverable: a cafe can also be a dinner suggestion.
+    out.sort(key=lambda place: not place["categoryMatch"])
+    return out[:6]
 
 
 def photon_autocomplete(text, kind="other"):
-    """Places matching what's typed (typo-tolerant) of the chosen type, within Singapore.
+    """Places matching what's typed within Singapore, preferring the chosen type.
     If nothing matches, retry without filler words ("pottery class" -> "pottery"),
     then with fewer words."""
     key = (text.casefold(), kind)
@@ -590,7 +591,7 @@ def clean_details(d):
     def num(v, hi):
         return v if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= hi else None
     if d.get("source") == "manual":
-        out.update({"source": "manual", "description": s(d.get("description"), 200)})
+        out.update({"source": "manual", "name": s(d.get("name"), MAX_BODY), "area": s(d.get("area"), MAX_BODY), "description": s(d.get("description"), 200)})
     if d.get("source") == "link":
         out.update({"source": "link", "name": s(d.get("name"), 80), "description": s(d.get("description"), 200),
                     "siteName": s(d.get("siteName"), 60), "website": url(d.get("website")),
@@ -1034,7 +1035,7 @@ class Handler(BaseHTTPRequestHandler):
         if not rate_ok(self.client_address[0], "editplace", 30):
             raise ApiError(429, "Slow down a little — try again in a minute")
         body = self.read_body()
-        name = text(body, "name", 1, 40)
+        name = text(body, "name", 1, MAX_BODY)
         kind = body.get("kind")
         if kind not in KINDS:
             raise ApiError(400, "Pick a type: food, drinks, activity or something else")
@@ -1078,7 +1079,7 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(429, "Slow down a little — try again in a minute")
         body = self.read_body()
         details = clean_details(body.get("details"))
-        name = text(body, "name", 1, 40)
+        name = text(body, "name", 1, MAX_BODY)
         kind = body.get("kind")
         if kind not in KINDS:
             raise ApiError(400, "Pick a type: food, drinks, activity, outdoors or other")

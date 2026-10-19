@@ -52,19 +52,19 @@ export function cardHTML(pl, depth) {
           : '<span class="photo-credit">' + esc(photo.credit) + '</span>')
         : pl.map ? mapHTML(pl.map, top) : '') +
       '<span class="kind">' + esc(pl.kind) + '</span></div>' +
-    '<div class="card-body"><h3>' + esc(pl.name) + '</h3>' +
+    '<div class="card-body"><h3 style="font-size:' + Math.max(18, 24 - Math.max(0, pl.name.length - 35) * 0.12) + 'px">' + esc(pl.name) + '</h3>' +
       (pl.price || pl.dist ? '<div class="meta">' + [pl.price, pl.dist].filter(Boolean).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') +
       '<p class="blurb">' + esc(pl.blurb) + '</p>' +
-      (pl.hoursToday ? '<p class="hours">🕒 Today: ' + esc(pl.hoursToday) + '</p>' : '') +
+      (pl.hoursToday ? '<p class="hours">🕒 Hours: ' + esc(pl.hoursToday) + '</p>' : '') +
 
       '<div class="meta-row">' +
-        (pl.custom ? editButton(state.custom.find((x) => x.id === pl.id), pl.name) : '') +
         (pl.tags.length ? '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' : '') +
-        (pl.website ? '<a class="g-link" href="' + esc(pl.website) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Website &amp; tickets <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' : '') +
+        (pl.website ? '<a class="g-link" href="' + esc(pl.website) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Quick link <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' : '') +
         '<a class="g-link" href="' + esc(googleLink(pl)) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>' + (pl.linkLabel || 'Look it up on Google') + ' <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
       '</div>' +
       (pl.outdoor ? '<div class="wx" data-wx hidden></div>' : '') +
-      '<div class="card-friends" data-friends="' + pl.id + '"></div>' +
+      '<div class="card-footer"><div class="card-friends" data-friends="' + pl.id + '"></div>' +
+      (pl.custom ? editButton(state.custom.find((x) => x.id === pl.id), pl.name) : '') + '</div>' +
     '</div></article>';
 }
 
@@ -99,7 +99,7 @@ export function renderDeck() {
   $$('#voteBtns button').forEach((b) => { b.disabled = !rest.length; });
   if (!rest.length) {
     deck.innerHTML = allPlaces().length
-      ? '<div class="deck-done"><div class="big" aria-hidden="true">🌸</div><h3>All swiped!</h3><p class="empty">Check the group favourites, then see your plan bloom. New ideas from friends will pop up here.</p></div>'
+      ? '<div class="deck-done"><div class="big" aria-hidden="true">✓</div><h3>All swiped!</h3><p class="empty">Check the group favourites, then see your plan bloom. New ideas from friends will pop up here.</p></div>'
       : '<div class="deck-done"><div class="big" aria-hidden="true">💡</div><h3>No ideas yet</h3><p class="empty">Add the first place or activity in <strong>Got another idea?</strong> — everyone in the group will be able to swipe on it.</p></div>';
     return;
   }
@@ -209,7 +209,10 @@ export async function saveSuggestion(name, kind, _unused, details) {
   const err = $('#sgError');
   let label = (name || '').trim();
   if (!label) { if (err) err.textContent = 'Type a place or idea first.'; return; }
-  if (label.length > 40) label = label.slice(0, 39) + '…';
+  if (details && details.source === 'manual' && details.area) {
+    const branch = ' (' + details.area + ')';
+    label += branch;
+  }
   if (allPlaces().some((p) => p.name.toLowerCase() === label.toLowerCase())) { if (err) err.textContent = '“' + label + '” is already in the deck.'; return; }
   if (state.mode === 'live') {
     try {
@@ -227,6 +230,7 @@ export async function saveSuggestion(name, kind, _unused, details) {
   refresh();
   toast(null, '✨ Added “' + label + '” to everyone’s deck');
   announce(label + ' added to the deck.');
+  return true;
 }
 
 export function renderRanking() {
