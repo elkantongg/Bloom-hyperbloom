@@ -40,11 +40,20 @@ Making plans with friends dies in the group chat: "when's everyone free?", "idk,
 No user accounts are needed. Passwords are stored hashed (PBKDF2), each person gets a private session token, and 5 wrong passwords lock that device out for 60 seconds. There's also a **demo mode** with simulated friends for trying it alone.
 
 ## Backend & database
-- `server.py` — a small Python server (standard library only, nothing to install). It serves the site and a JSON API.
-- **SQLite** database at `data/bloom.db`, created automatically on first run. No sign-up or login needed.
-  - Tables: `groups` (title, host, week, hashed password) and `members` (name, colour, availability, votes).
-  - View it in VS Code with the **SQLite Viewer** extension (click `data/bloom.db`), or in the terminal: `sqlite3 data/bloom.db "SELECT name, avail, votes FROM members;"`
-  - The database is git-ignored, so private group data is never committed.
+- `server.py` — a small Python server. It serves the site and a JSON API.
+- **PostgreSQL on Supabase**, reached through `DATABASE_URL` in `.env` (git-ignored). The browser never
+  sees the connection string; only the server talks to the database.
+  - Tables (`db/schema.sql`, created automatically on start-up, never dropped): `groups` (title, host,
+    week, salted PBKDF2 password hash), `members` (name, colour, hashed session token, availability,
+    votes) and `places` (suggested ideas and their details).
+  - Row level security is switched on with no policies, so Supabase's public browser keys can't read
+    the tables; only the server's own database login can.
+  - Each API request is one transaction: it all saves, or (on any error) nothing does. If the database
+    can't be reached the API answers 503 "nothing was saved", and the server refuses to start at all
+    when `DATABASE_URL` is missing or invalid. There is no fallback to SQLite.
+  - View the data in Supabase's **Table Editor**.
+- The old SQLite file `data/bloom.db` is kept as a read-only backup (git-ignored).
+  `migrate_sqlite_to_postgres.py` copies it into PostgreSQL (see below).
 
 | Method | Path | What it does |
 |---|---|---|
@@ -88,12 +97,27 @@ picks up the new file automatically. Without the file, search falls back to Phot
 
 Try it in the terminal: `python3 placesearch.py search "macdonalds tampines"`
 
-Optional speed-up: `pip install -r requirements.txt` installs RapidFuzz (results are the same without it).
+`pip install -r requirements.txt` also installs RapidFuzz, an optional speed-up (results are the same without it).
 
 ### Tests
 ```
 python3 -m unittest discover tests
 ```
+The database tests need a separate, throwaway PostgreSQL database whose name contains `test`
+(never your Supabase one). They run in their own temporary schema and are skipped without it:
+```
+TEST_DATABASE_URL=postgresql://USER@127.0.0.1:5432/bloom_test python3 -m unittest discover tests
+```
+
+### Moving data from SQLite to PostgreSQL
+```
+python3 migrate_sqlite_to_postgres.py            # dry run: shows what it would copy, writes nothing
+python3 migrate_sqlite_to_postgres.py --apply    # copies (asks you to type "migrate" first)
+```
+It reads `data/bloom.db` read-only, copies only rows that aren't in PostgreSQL yet, never overwrites
+or deletes anything, and stops without writing if an id already exists there with different data.
+After copying it re-checks every row and relationship before committing, so it's safe to run again.
+Existing invite links, passwords and sessions keep working.
 
 ## Place search with Google (optional, paid)
 With a Google Places API key, "Got another idea?" works like a mini Google Maps:
@@ -116,10 +140,13 @@ rate-limited per person. Without a key, Bloom uses OpenStreetMap search instead.
 ```
 index.html        page shell (header, nav, accessibility menu)
 styles.css        all styling, light/dark themes
-server.py         Python server: serves the site + JSON API, SQLite database
+server.py         Python server: serves the site + JSON API
+bloomdb.py        PostgreSQL connection: DATABASE_URL checks, pool, transactions
+db/schema.sql     PostgreSQL tables
+migrate_sqlite_to_postgres.py   one-off copy from the old SQLite file
 placesearch.py    Singapore place index: build from OpenStreetMap + typo-tolerant search
 search/           the built index (sg-places.json.gz)
-tests/            place search tests (python3 -m unittest discover tests)
+tests/            place search + database/API tests (python3 -m unittest discover tests)
 js/
   main.js         entry point: starts everything in order
   state.js        the shared app state (+ demo friends)
@@ -142,9 +169,19 @@ js/
 The browser loads these as native ES modules, so there is no build step.
 
 ## Tech
-Plain HTML, CSS and JavaScript on the front end (no build step); Python + SQLite on the back end. Polling pauses when the tab is hidden to save battery and CPU.
+Plain HTML, CSS and JavaScript on the front end (no build step); Python + PostgreSQL (Supabase) on the back end. Polling pauses when the tab is hidden to save battery and CPU.
 
-Run locally (from this folder):
+Run locally (from this folder), the first time:
+```
+python3 -m venv .venv && source .venv/bin/activate
+python3 -m pip install -r requirements.txt
+```
+Put your Supabase connection string in `.env` (Project Settings > Database > Connection string > URI;
+percent-encode special characters in the password, e.g. `@` → `%40`):
+```
+DATABASE_URL=postgresql://postgres.PROJECT:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres
+```
+Then, with the virtual environment active:
 ```
 npm start
 ```

@@ -28,3 +28,6 @@ __pycache__/
 *.pyc
 # Raw Overpass downloads (the built index search/sg-places.json.gz is kept)
 search/.cache/
+
+# Python virtual environment
+.venv/
