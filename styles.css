@@ -789,3 +789,16 @@ kbd {
   .versus { margin-top: 72px; }
   .how-section { margin-top: 80px; }
 }
+
+/* Branch picker for suggestions */
+.picker { margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; padding: 10px; background: var(--bg); }
+.pick-title { font-weight: 700; font-size: 14px; margin: 2px 4px 8px; }
+.picker ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+.pick {
+  width: 100%; text-align: left; display: grid; gap: 2px; cursor: pointer;
+  padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.pick:hover { border-color: var(--accent); }
+.pick strong { font-size: 14px; }
+.pick span { font-size: 12px; color: var(--muted); }
+.pick.plain { background: transparent; }

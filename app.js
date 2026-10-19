@@ -70,17 +70,20 @@
   function customPlace(c) {
     const k = KINDS[c.kind] || KINDS.other;
     const by = c.addedBy === state.me.id ? 'you' : ((state.friends.find((f) => f.id === c.addedBy) || {}).name || 'a friend');
-    const d = c.details || null; // filled in by Google Places when the server has a key
+    const d = c.details || null; // from Google Places or OpenStreetMap, picked when the idea was added
     const tags = [];
     if (d) {
-      if (d.rating) tags.push('⭐ ' + d.rating.toFixed(1) + (d.reviews ? ' (' + d.reviews.toLocaleString() + ')' : ''));
+      if (d.stepFree) tags.push('Step-free');
+      if (d.veg) tags.push('Veg options');
+      if (d.rating) tags.push('⭐ ' + Number(d.rating).toFixed(1) + (d.reviews ? ' (' + Number(d.reviews).toLocaleString() + ')' : ''));
       if (d.openNow === true) tags.push('🟢 Open now');
       if (d.openNow === false) tags.push('Closed now');
       if (d.reservable) tags.push('📅 Takes reservations');
     }
-    return { id: c.id, q: c.name, name: (d && d.name) || c.name, kind: k.label, emoji: k.emoji, hue: k.hue,
-      price: (d && d.price) || '', dist: '', blurb: (d && d.address) || 'Suggested by ' + by + '.',
-      hoursToday: d ? todaysHours(d.hours) : '', suggestedBy: by,
+    // c.name already includes the branch, e.g. "Din Tai Fung (Jurong East)".
+    return { id: c.id, q: c.name, name: c.name, kind: (d && d.category) || k.label, emoji: k.emoji, hue: k.hue,
+      price: (d && d.price) || '', dist: (d && d.area) || '', blurb: (d && d.address) || 'Suggested by ' + by + '.',
+      hoursToday: d ? (todaysHours(d.hours) || d.hoursText || '') : '', suggestedBy: by,
       link: d && d.mapsUrl, website: d && d.website, tags: tags, custom: true, addedBy: c.addedBy };
   }
   // Google lists hours Monday-first: "Monday: 11:00 AM – 9:00 PM".
@@ -822,16 +825,16 @@
         '<div class="places-side">' +
         '<form class="panel suggest" id="suggestForm" novalidate>' +
           '<h2 class="sub-title">Got another idea?</h2>' +
-          '<p class="suggest-sub">Add it to everyone’s deck — food, drinks, an activity, anything.' +
-            (state.mode === 'live' && state.lookups ? ' We’ll pull in its hours, price and rating from Google.' : '') + '</p>' +
+          '<p class="suggest-sub">Add it to everyone’s deck — we’ll look it up and fill in the details. Add an area for a specific branch, like “Din Tai Fung Tampines”.</p>' +
           '<div class="suggest-row">' +
             '<label class="sr-only" for="sgName">Place or idea</label>' +
-            '<input id="sgName" maxlength="40" placeholder="e.g. Spicy noodle, bubble tea, rock climbing" autocomplete="off">' +
+            '<input id="sgName" maxlength="40" placeholder="e.g. Din Tai Fung Tampines" autocomplete="off">' +
             '<label class="sr-only" for="sgKind">Type</label>' +
             '<select id="sgKind">' + Object.keys(KINDS).map((k) => '<option value="' + k + '">' + KINDS[k].emoji + ' ' + KINDS[k].label + '</option>').join('') + '</select>' +
             '<button type="submit" class="btn small">＋ Add</button>' +
           '</div>' +
           '<p class="form-error" id="sgError" role="alert"></p>' +
+          '<div class="picker" id="sgPicker" hidden></div>' +
         '</form>' +
         '<div class="panel"><h2 class="sub-title">Group favourites</h2>' +
           '<ol class="rank-list" id="rankList" aria-live="polite"></ol>' +
@@ -854,7 +857,7 @@
         (pl.price || pl.dist ? '<div class="meta">' + [pl.price, pl.dist].filter(Boolean).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') +
         '<p class="blurb">' + esc(pl.blurb) + '</p>' +
         (pl.hoursToday ? '<p class="hours">🕒 Today: ' + esc(pl.hoursToday) + '</p>' : '') +
-        (pl.custom && pl.link ? '<p class="by">Suggested by ' + esc(pl.suggestedBy) + '</p>' : '') +
+        (pl.custom && pl.blurb.indexOf('Suggested by') !== 0 ? '<p class="by">Suggested by ' + esc(pl.suggestedBy) + '</p>' : '') +
         '<div class="meta-row">' +
           (pl.tags.length ? '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' : '') +
           '<a class="g-link" href="' + googleLink(pl) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>' + (pl.link ? 'Open in Google Maps' : 'Look it up on Google') + ' <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
@@ -976,26 +979,67 @@
     const input = $('#sgName'), err = $('#sgError');
     const name = input.value.trim(), kind = $('#sgKind').value;
     err.textContent = '';
+    hidePicker();
     if (!name) { err.textContent = 'Type a place or idea first.'; input.focus(); return; }
     if (allPlaces().some((p) => p.name.toLowerCase() === name.toLowerCase())) { err.textContent = '“' + name + '” is already in the deck.'; return; }
+    const btn = $('#suggestForm button[type="submit"]');
+    btn.disabled = true; btn.textContent = 'Looking it up…';
+    let found = [];
+    try {
+      const res = await fetch('/api/lookup?q=' + encodeURIComponent(name));
+      if (res.ok) found = (await res.json()).results || [];
+    } catch (ex) { /* offline or static hosting: just add it as typed */ }
+    btn.disabled = false; btn.textContent = '＋ Add';
+    if (found.length > 1) return showPicker(name, kind, found);
+    await saveSuggestion(name, kind, found[0] || null);
+  }
+
+  // Several matches (e.g. "Din Tai Fung" has many branches): let the person choose.
+  function showPicker(name, kind, found) {
+    const box = $('#sgPicker');
+    box.innerHTML = '<p class="pick-title">Which one did you mean?</p><ul>' +
+      found.map((r, i) => '<li><button type="button" class="pick" data-i="' + i + '">' +
+        '<strong>' + esc(r.name || name) + (r.area ? ' · ' + esc(r.area) : '') + '</strong>' +
+        '<span>' + esc([r.category, r.price, r.address].filter(Boolean).join(' · ')) + '</span></button></li>').join('') +
+      '<li><button type="button" class="pick plain" data-i="-1"><strong>None of these</strong><span>Add “' + esc(name) + '” as typed</span></button></li></ul>';
+    box.hidden = false;
+    box.onclick = (ev) => {
+      const b = ev.target.closest('.pick');
+      if (!b) return;
+      const i = +b.dataset.i;
+      hidePicker();
+      saveSuggestion(name, kind, i >= 0 ? found[i] : null);
+    };
+    const first = box.querySelector('.pick');
+    if (first) first.focus();
+    announce(found.length + ' matches for ' + name + '. Pick one.');
+  }
+  function hidePicker() {
+    const box = $('#sgPicker');
+    if (box) { box.hidden = true; box.innerHTML = ''; }
+  }
+
+  async function saveSuggestion(name, kind, details) {
+    const err = $('#sgError');
+    let label = details && details.area ? (details.name || name) + ' (' + details.area + ')' : name;
+    if (label.length > 40) label = label.slice(0, 39) + '…';
     if (state.mode === 'live') {
-      const btn = $('#suggestForm button[type="submit"]');
-      btn.disabled = true; btn.textContent = state.lookups ? 'Looking it up…' : 'Adding…';
       try {
-        const data = await api('POST', '/groups/' + encodeURIComponent(state.group.id) + '/places', { name: name, kind: kind });
+        const data = await api('POST', '/groups/' + encodeURIComponent(state.group.id) + '/places', { name: label, kind: kind, details: details });
         applyState(data, false);
-      } catch (ex) { err.textContent = ex.message; return; }
-      finally { btn.disabled = false; btn.textContent = '＋ Add'; }
+      } catch (ex) { if (err) err.textContent = ex.message; return; }
     } else {
-      state.custom.push({ id: 'p_demo' + Date.now(), name: name, kind: kind, addedBy: state.me.id });
+      state.custom.push({ id: 'p_demo' + Date.now(), name: label, kind: kind, addedBy: state.me.id, details: details });
       const idx = allPlaces().findIndex((p) => !(p.id in state.me.votes));
       state.deckIndex = idx === -1 ? allPlaces().length : idx;
     }
-    input.value = '';
+    const input = $('#sgName');
+    if (input) input.value = '';
     renderDeck();
     refresh();
-    toast(null, '✨ Added “' + name + '” to everyone’s deck');
-    announce(name + ' added to the deck.');
+    const shown = details ? (details.name || name) + (details.area ? ' · ' + details.area : '') : name;
+    toast(null, '✨ Added ' + shown + (details ? '' : ' (no map details found)'));
+    announce(shown + ' added to the deck.');
   }
 
   function renderRanking() {

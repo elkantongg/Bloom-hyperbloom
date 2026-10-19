@@ -17,7 +17,8 @@ from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.error
 import urllib.request
-from urllib.parse import urlparse
+import urllib.parse
+from urllib.parse import parse_qs, urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -53,6 +54,10 @@ COLORS = ["#2F6FEB", "#E03131", "#D9831A", "#7C5CFF", "#11966A", "#0E8E9C", "#B4
 PLACE_IDS = {"noodle", "bowling", "picnic", "escape", "karaoke", "cafe"}  # built-in suggestions
 KINDS = {"food", "drinks", "activity", "outdoors", "other"}
 MAX_CUSTOM_PLACES = 20
+MAX_MEMBERS = 12
+MAX_BODY = 16 * 1024
+SLOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}@\d{1,2}$")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # Optional: Google Places API (New) fills in real details for suggested places.
 # Without a key, suggestions still work, just without hours/prices/ratings.
@@ -63,53 +68,172 @@ PLACES_BIAS = {"circle": {"center": {"latitude": float(os.environ.get("BLOOM_LAT
                           "radius": 30000.0}}
 PRICE_SYMBOLS = {"PRICE_LEVEL_FREE": "Free", "PRICE_LEVEL_INEXPENSIVE": "$", "PRICE_LEVEL_MODERATE": "$$",
                  "PRICE_LEVEL_EXPENSIVE": "$$$", "PRICE_LEVEL_VERY_EXPENSIVE": "$$$$"}
-PLACES_FIELDS = ",".join([
-    "places.displayName", "places.formattedAddress", "places.priceLevel", "places.rating",
-    "places.userRatingCount", "places.regularOpeningHours.weekdayDescriptions",
-    "places.currentOpeningHours.openNow", "places.googleMapsUri", "places.reservable", "places.websiteUri",
-])
 
 
-def parse_place(data):
-    """Turn a Places API (New) searchText response into the small summary Bloom stores."""
-    places = (data or {}).get("places") or []
-    if not places:
-        return None
-    p = places[0]
-    return {
-        "name": (p.get("displayName") or {}).get("text"),
-        "address": p.get("formattedAddress"),
-        "price": PRICE_SYMBOLS.get(p.get("priceLevel")),
-        "rating": p.get("rating"),
-        "reviews": p.get("userRatingCount"),
-        "hours": (p.get("regularOpeningHours") or {}).get("weekdayDescriptions") or [],
-        "openNow": (p.get("currentOpeningHours") or {}).get("openNow"),
-        "mapsUrl": p.get("googleMapsUri"),
-        "website": p.get("websiteUri"),
-        "reservable": p.get("reservable"),
-    }
+DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+OSM_DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+UA = "Bloom-hackathon-prototype/1.0 (https://github.com/elkantongg/hyperbloom)"
+LOOKUP_CACHE = {}          # query -> (time, result); avoids repeat calls
+LOOKUP_LOCK = threading.Lock()
+LAST_OSM_CALL = [0.0]      # OpenStreetMap asks for at most 1 request per second
+LOOKUP_HITS = {}           # ip -> [timestamps] for simple rate limiting
 
 
-def lookup_place(query):
-    """Ask Google Places for the best match. Returns None if there's no key or anything fails."""
-    if not PLACES_KEY:
-        return None
-    body = json.dumps({"textQuery": query, "maxResultCount": 1, "regionCode": PLACES_REGION,
+def maps_url(name, address):
+    """A Google Maps link that opens the place (official Maps URL format, no key needed)."""
+    q = " ".join(x for x in (name, address) if x)
+    return "https://www.google.com/maps/search/?api=1&query=" + urllib.request.quote(q)
+
+
+def osm_hours_to_week(spec):
+    """Turn simple OSM opening_hours like 'Mo-Fr 11:00-21:30; Sa,Su 10:00-22:00' into 7 lines.
+    Returns [] for formats we don't understand (the raw text is still shown)."""
+    if not spec:
+        return []
+    if spec.strip() == "24/7":
+        return [f"{d}: Open 24 hours" for d in DAY_NAMES]
+    week = [None] * 7
+    for rule in spec.split(";"):
+        rule = rule.strip()
+        m = re.match(r"^([A-Za-z,\- ]+)\s+([0-9:\-, ]+|off|closed)$", rule)
+        if not m:
+            return []
+        days, times = m.group(1).replace(" ", ""), m.group(2).strip()
+        idx = []
+        for part in days.split(","):
+            if "-" in part:
+                a, b = part.split("-")
+                if a not in OSM_DAYS or b not in OSM_DAYS:
+                    return []
+                i, j = OSM_DAYS.index(a), OSM_DAYS.index(b)
+                idx += list(range(i, j + 1)) if i <= j else list(range(i, 7)) + list(range(0, j + 1))
+            elif part in OSM_DAYS:
+                idx.append(OSM_DAYS.index(part))
+            else:
+                return []
+        label = "Closed" if times in ("off", "closed") else times.replace("-", " – ").replace(",", ", ")
+        for i in idx:
+            week[i] = label
+    return [f"{DAY_NAMES[i]}: {week[i] or 'Closed'}" for i in range(7)]
+
+
+def parse_google(data):
+    out = []
+    for p in (data or {}).get("places") or []:
+        name = (p.get("displayName") or {}).get("text")
+        address = p.get("formattedAddress")
+        out.append({
+            "source": "google", "name": name, "address": address,
+            "area": None, "category": ((p.get("primaryTypeDisplayName") or {}).get("text")),
+            "price": PRICE_SYMBOLS.get(p.get("priceLevel")),
+            "rating": p.get("rating"), "reviews": p.get("userRatingCount"),
+            "hours": (p.get("regularOpeningHours") or {}).get("weekdayDescriptions") or [],
+            "hoursText": None,
+            "openNow": (p.get("currentOpeningHours") or {}).get("openNow"),
+            "mapsUrl": p.get("googleMapsUri") or maps_url(name, address),
+            "website": p.get("websiteUri"), "reservable": p.get("reservable"),
+            "stepFree": (p.get("accessibilityOptions") or {}).get("wheelchairAccessibleEntrance"),
+            "veg": p.get("servesVegetarianFood"),
+        })
+    return out
+
+
+def parse_osm(rows):
+    out = []
+    for r in rows or []:
+        a = r.get("address") or {}
+        e = r.get("extratags") or {}
+        name = r.get("name") or (r.get("display_name") or "").split(",")[0]
+        street = " ".join(x for x in (a.get("house_number"), a.get("road")) if x)
+        area = a.get("suburb") or a.get("city_district") or a.get("neighbourhood") or a.get("quarter")
+        address = ", ".join(x for x in (street, area, a.get("postcode")) if x) or None
+        cuisine = (e.get("cuisine") or "").split(";")[0].replace("_", " ").strip()
+        kind = (r.get("type") or "").replace("_", " ")
+        category = (cuisine.title() + " " + kind).strip() if cuisine else kind.capitalize() or None
+        hours = e.get("opening_hours")
+        out.append({
+            "source": "osm", "name": name, "address": address, "area": area, "category": category,
+            "price": None, "rating": None, "reviews": None,
+            "hours": osm_hours_to_week(hours), "hoursText": hours,
+            "openNow": None, "mapsUrl": maps_url(name, address),
+            "website": e.get("website") or e.get("contact:website"), "reservable": None,
+            "stepFree": {"yes": True, "no": False}.get(e.get("wheelchair")),
+            "veg": True if e.get("diet:vegetarian") in ("yes", "only") else None,
+        })
+    return out
+
+
+def google_search(query):
+    fields = ",".join(["places.displayName", "places.formattedAddress", "places.priceLevel", "places.rating",
+                       "places.userRatingCount", "places.regularOpeningHours.weekdayDescriptions",
+                       "places.currentOpeningHours.openNow", "places.googleMapsUri", "places.reservable",
+                       "places.websiteUri", "places.primaryTypeDisplayName",
+                       "places.accessibilityOptions.wheelchairAccessibleEntrance", "places.servesVegetarianFood"])
+    body = json.dumps({"textQuery": query, "pageSize": 5, "regionCode": PLACES_REGION,
                        "languageCode": "en", "locationBias": PLACES_BIAS}).encode()
     req = urllib.request.Request("https://places.googleapis.com/v1/places:searchText", data=body, method="POST")
     req.add_header("Content-Type", "application/json")
     req.add_header("X-Goog-Api-Key", PLACES_KEY)
-    req.add_header("X-Goog-FieldMask", PLACES_FIELDS)
+    req.add_header("X-Goog-FieldMask", fields)
+    with urllib.request.urlopen(req, timeout=6) as r:
+        return parse_google(json.loads(r.read()))
+
+
+def osm_search(query):
+    with LOOKUP_LOCK:  # respect OpenStreetMap's 1 request/second policy
+        wait = 1.1 - (time.time() - LAST_OSM_CALL[0])
+        if wait > 0:
+            time.sleep(wait)
+        LAST_OSM_CALL[0] = time.time()
+    qs = urllib.parse.urlencode({"q": query, "countrycodes": PLACES_REGION.lower(), "format": "jsonv2",
+                                 "limit": 5, "extratags": 1, "addressdetails": 1})
+    req = urllib.request.Request("https://nominatim.openstreetmap.org/search?" + qs, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=6) as r:
+        return parse_osm(json.loads(r.read()))
+
+
+def lookup_places(query):
+    """Up to 5 matching places: Google Places if a key is set, otherwise OpenStreetMap (free)."""
+    key = query.strip().casefold()
+    hit = LOOKUP_CACHE.get(key)
+    if hit and time.time() - hit[0] < 86400:
+        return hit[1]
     try:
-        with urllib.request.urlopen(req, timeout=6) as r:
-            return parse_place(json.loads(r.read()))
-    except (urllib.error.URLError, ValueError, TimeoutError) as e:
-        print(f"Places lookup failed for {query!r}: {e}")
+        results = google_search(query) if PLACES_KEY else osm_search(query)
+    except (urllib.error.URLError, ValueError, TimeoutError, OSError) as e:
+        print(f"Place lookup failed for {query!r}: {e}")
+        return {"source": None, "results": []}
+    out = {"source": "google" if PLACES_KEY else "osm", "results": results}
+    LOOKUP_CACHE[key] = (time.time(), out)
+    if len(LOOKUP_CACHE) > 2000:
+        LOOKUP_CACHE.pop(next(iter(LOOKUP_CACHE)))
+    return out
+
+
+def clean_details(d):
+    """Details arrive from the browser, so keep only known fields with safe types and sizes."""
+    if not isinstance(d, dict):
         return None
-MAX_MEMBERS = 12
-MAX_BODY = 16 * 1024
-SLOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}@\d{1,2}$")
-DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    def s(v, n=200):
+        return v[:n] if isinstance(v, str) and v.strip() else None
+    def url(v):
+        return v[:500] if isinstance(v, str) and v.startswith("https://") else None
+    def b(v):
+        return v if isinstance(v, bool) else None
+    def num(v):
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v < 10_000_000 else None
+    hours = d.get("hours")
+    return {
+        "source": d.get("source") if d.get("source") in ("google", "osm") else None,
+        "name": s(d.get("name"), 80), "address": s(d.get("address")), "area": s(d.get("area"), 60),
+        "category": s(d.get("category"), 60), "price": d.get("price") if d.get("price") in PRICE_SYMBOLS.values() else None,
+        "rating": num(d.get("rating")), "reviews": num(d.get("reviews")),
+        "hours": [s(h, 80) for h in hours[:7] if s(h, 80)] if isinstance(hours, list) else [],
+        "hoursText": s(d.get("hoursText")), "openNow": b(d.get("openNow")),
+        "mapsUrl": url(d.get("mapsUrl")), "website": url(d.get("website")),
+        "reservable": b(d.get("reservable")), "stepFree": b(d.get("stepFree")), "veg": b(d.get("veg")),
+    }
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS groups (
@@ -276,7 +400,10 @@ class Handler(BaseHTTPRequestHandler):
 
     # ----- HTTP verbs -----
     def do_GET(self):
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path == "/api/lookup":
+            return self.lookup(parse_qs(parsed.query).get("q", [""])[0])
         if path.startswith("/api/"):
             return self.api("GET", path)
         if path not in STATIC:
@@ -422,15 +549,26 @@ class Handler(BaseHTTPRequestHandler):
             payload = group_state(gid, member_id)
         self.send_json(200, payload)
 
+    def lookup(self, query):
+        query = query.strip()[:80]
+        if len(query) < 2:
+            return self.send_json(400, {"error": "Type at least 2 characters"})
+        ip = self.client_address[0]
+        recent = [t for t in LOOKUP_HITS.get(ip, []) if t > time.time() - 60]
+        if len(recent) >= 20:
+            return self.send_json(429, {"error": "Too many searches — try again in a minute"})
+        LOOKUP_HITS[ip] = recent + [time.time()]
+        if len(LOOKUP_HITS) > 5000:
+            LOOKUP_HITS.clear()
+        self.send_json(200, lookup_places(query))
+
     def add_place(self, gid):
         body = self.read_body()
         name = text(body, "name", 1, 40)
         kind = body.get("kind")
         if kind not in KINDS:
             raise ApiError(400, "Pick a type: food, drinks, activity, outdoors or other")
-        with DB_LOCK:
-            self.auth(gid)  # check membership before spending an API call
-        details = lookup_place(name)  # network call, so it runs outside the lock
+        details = clean_details(body.get("details"))
         with DB_LOCK:
             member_id = self.auth(gid)
             existing = [r[0].casefold() for r in DB.execute("SELECT name FROM places WHERE group_id=?", (gid,))]
@@ -450,7 +588,8 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Bloom is running at http://localhost:{PORT}  (database: {os.path.relpath(DB_PATH, ROOT)})")
-    print("Google Places lookups: " + ("ON" if PLACES_KEY else "off (add GOOGLE_PLACES_API_KEY to .env to turn on)"))
+    print("Place details: " + ("Google Places (prices, ratings, hours)" if PLACES_KEY
+          else "OpenStreetMap (free). Add GOOGLE_PLACES_API_KEY to .env for prices and ratings."))
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
