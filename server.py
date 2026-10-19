@@ -15,9 +15,26 @@ import threading
 import time
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import urllib.error
+import urllib.request
 from urllib.parse import urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+def load_dotenv(path):
+    """Read KEY=value lines from a local .env file (kept out of git) into the environment."""
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+load_dotenv(os.path.join(ROOT, ".env"))
 DB_PATH = os.environ.get("BLOOM_DB", os.path.join(ROOT, "data", "bloom.db"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "5178"))
@@ -32,10 +49,63 @@ STATIC = {
     "/favicon.ico": ("icon.svg", "image/svg+xml"),
 }
 
-COLORS = ["#2F6FEB", "#E4477A", "#D9831A", "#7C5CFF", "#11966A", "#0E8E9C", "#B4469B", "#8A6D1F", "#C2410C", "#4F46E5", "#0F766E", "#BE185D"]
+COLORS = ["#2F6FEB", "#E03131", "#D9831A", "#7C5CFF", "#11966A", "#0E8E9C", "#B4469B", "#8A6D1F", "#C2410C", "#4F46E5", "#0F766E", "#BE185D"]
 PLACE_IDS = {"noodle", "bowling", "picnic", "escape", "karaoke", "cafe"}  # built-in suggestions
 KINDS = {"food", "drinks", "activity", "outdoors", "other"}
 MAX_CUSTOM_PLACES = 20
+
+# Optional: Google Places API (New) fills in real details for suggested places.
+# Without a key, suggestions still work, just without hours/prices/ratings.
+PLACES_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "").strip()
+PLACES_REGION = os.environ.get("BLOOM_REGION", "SG")
+PLACES_BIAS = {"circle": {"center": {"latitude": float(os.environ.get("BLOOM_LAT", "1.3521")),
+                                     "longitude": float(os.environ.get("BLOOM_LON", "103.8198"))},
+                          "radius": 30000.0}}
+PRICE_SYMBOLS = {"PRICE_LEVEL_FREE": "Free", "PRICE_LEVEL_INEXPENSIVE": "$", "PRICE_LEVEL_MODERATE": "$$",
+                 "PRICE_LEVEL_EXPENSIVE": "$$$", "PRICE_LEVEL_VERY_EXPENSIVE": "$$$$"}
+PLACES_FIELDS = ",".join([
+    "places.displayName", "places.formattedAddress", "places.priceLevel", "places.rating",
+    "places.userRatingCount", "places.regularOpeningHours.weekdayDescriptions",
+    "places.currentOpeningHours.openNow", "places.googleMapsUri", "places.reservable", "places.websiteUri",
+])
+
+
+def parse_place(data):
+    """Turn a Places API (New) searchText response into the small summary Bloom stores."""
+    places = (data or {}).get("places") or []
+    if not places:
+        return None
+    p = places[0]
+    return {
+        "name": (p.get("displayName") or {}).get("text"),
+        "address": p.get("formattedAddress"),
+        "price": PRICE_SYMBOLS.get(p.get("priceLevel")),
+        "rating": p.get("rating"),
+        "reviews": p.get("userRatingCount"),
+        "hours": (p.get("regularOpeningHours") or {}).get("weekdayDescriptions") or [],
+        "openNow": (p.get("currentOpeningHours") or {}).get("openNow"),
+        "mapsUrl": p.get("googleMapsUri"),
+        "website": p.get("websiteUri"),
+        "reservable": p.get("reservable"),
+    }
+
+
+def lookup_place(query):
+    """Ask Google Places for the best match. Returns None if there's no key or anything fails."""
+    if not PLACES_KEY:
+        return None
+    body = json.dumps({"textQuery": query, "maxResultCount": 1, "regionCode": PLACES_REGION,
+                       "languageCode": "en", "locationBias": PLACES_BIAS}).encode()
+    req = urllib.request.Request("https://places.googleapis.com/v1/places:searchText", data=body, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("X-Goog-Api-Key", PLACES_KEY)
+    req.add_header("X-Goog-FieldMask", PLACES_FIELDS)
+    try:
+        with urllib.request.urlopen(req, timeout=6) as r:
+            return parse_place(json.loads(r.read()))
+    except (urllib.error.URLError, ValueError, TimeoutError) as e:
+        print(f"Places lookup failed for {query!r}: {e}")
+        return None
 MAX_MEMBERS = 12
 MAX_BODY = 16 * 1024
 SLOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}@\d{1,2}$")
@@ -84,6 +154,9 @@ def open_db():
     conn.execute("PRAGMA journal_mode=DELETE")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+    # Upgrade older databases in place.
+    if "details" not in {r[1] for r in conn.execute("PRAGMA table_info(places)")}:
+        conn.execute("ALTER TABLE places ADD COLUMN details TEXT")
     return conn
 
 
@@ -138,12 +211,14 @@ def group_state(group_id, member_id):
         (group_id,),
     ).fetchall()
     places = DB.execute(
-        "SELECT id, name, kind, added_by FROM places WHERE group_id=? ORDER BY created_at, rowid", (group_id,)
+        "SELECT id, name, kind, added_by, details FROM places WHERE group_id=? ORDER BY created_at, rowid", (group_id,)
     ).fetchall()
     return {
         "group": {"id": g["id"], "title": g["title"], "host": g["host_name"], "startDate": g["start_date"]},
         "me": member_id,
-        "places": [{"id": p["id"], "name": p["name"], "kind": p["kind"], "addedBy": p["added_by"]} for p in places],
+        "places": [{"id": p["id"], "name": p["name"], "kind": p["kind"], "addedBy": p["added_by"],
+                    "details": json.loads(p["details"]) if p["details"] else None} for p in places],
+        "lookups": bool(PLACES_KEY),
         "members": [
             {
                 "id": r["id"], "name": r["name"], "color": r["color"], "isHost": bool(r["is_host"]),
@@ -354,6 +429,9 @@ class Handler(BaseHTTPRequestHandler):
         if kind not in KINDS:
             raise ApiError(400, "Pick a type: food, drinks, activity, outdoors or other")
         with DB_LOCK:
+            self.auth(gid)  # check membership before spending an API call
+        details = lookup_place(name)  # network call, so it runs outside the lock
+        with DB_LOCK:
             member_id = self.auth(gid)
             existing = [r[0].casefold() for r in DB.execute("SELECT name FROM places WHERE group_id=?", (gid,))]
             if name.casefold() in existing:
@@ -361,8 +439,8 @@ class Handler(BaseHTTPRequestHandler):
             if len(existing) >= MAX_CUSTOM_PLACES:
                 raise ApiError(403, f"This group already has {MAX_CUSTOM_PLACES} suggestions")
             DB.execute(
-                "INSERT INTO places (id, group_id, name, kind, added_by, created_at) VALUES (?,?,?,?,?,?)",
-                ("p_" + secrets.token_urlsafe(6), gid, name, kind, member_id, now()),
+                "INSERT INTO places (id, group_id, name, kind, added_by, created_at, details) VALUES (?,?,?,?,?,?,?)",
+                ("p_" + secrets.token_urlsafe(6), gid, name, kind, member_id, now(), json.dumps(details) if details else None),
             )
             DB.commit()
             payload = group_state(gid, member_id)
@@ -372,6 +450,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Bloom is running at http://localhost:{PORT}  (database: {os.path.relpath(DB_PATH, ROOT)})")
+    print("Google Places lookups: " + ("ON" if PLACES_KEY else "off (add GOOGLE_PLACES_API_KEY to .env to turn on)"))
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

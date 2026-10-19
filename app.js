@@ -44,19 +44,19 @@
   // ---------- Demo data ----------
   // Free-time patterns by weekday (0 = Sun). Everyone overlaps on Saturday afternoon.
   const FRIENDS = [
-    { id: 'maya', name: 'Maya', color: '#E4477A', pattern: { 1: [[18, 22]], 2: [[18, 22]], 3: [[18, 22]], 4: [[18, 22]], 5: [[18, 22]], 6: [[12, 20]], 0: [[10, 14]] } },
+    { id: 'maya', name: 'Maya', color: '#E03131', pattern: { 1: [[18, 22]], 2: [[18, 22]], 3: [[18, 22]], 4: [[18, 22]], 5: [[18, 22]], 6: [[12, 20]], 0: [[10, 14]] } },
     { id: 'jun', name: 'Jun', color: '#D9831A', pattern: { 5: [[19, 22]], 6: [[14, 22]], 0: [[14, 18]] } },
     { id: 'priya', name: 'Priya', color: '#7C5CFF', pattern: { 1: [[19, 21]], 2: [[19, 21]], 4: [[19, 21]], 5: [[19, 22]], 6: [[10, 18]], 0: [[10, 22]] } },
     { id: 'sam', name: 'Sam', color: '#11966A', pattern: { 2: [[17, 22]], 4: [[17, 22]], 6: [[15, 19]], 0: [[11, 13]] } },
   ];
 
   const PLACES = [
-    { id: 'noodle', q: 'noodle bar near me', name: 'Lantern Noodle Bar', kind: 'Dinner', emoji: '🍜', price: '$$', dist: '1.2 km', blurb: 'Hand-pulled noodles and big shared tables.', tags: ['Step-free', 'Veg options'], hue: '#FFC48A' },
-    { id: 'bowling', q: 'bowling alley near me', name: 'Strike Social', kind: 'Bowling', emoji: '🎳', price: '$$', dist: '3.4 km', blurb: 'Retro lanes, arcade machines and milkshakes.', tags: ['Step-free', 'Groups of 6+'], hue: '#A9C4FF' },
-    { id: 'picnic', q: 'botanic gardens picnic', name: 'Botanic Gardens Picnic', kind: 'Outdoors', emoji: '🧺', price: 'Free', dist: '2.0 km', blurb: 'Bring snacks, find a shady lawn, stay till sunset.', tags: ['Free', 'Weather-dependent'], hue: '#A8E6B4', outdoor: true },
-    { id: 'escape', q: 'escape room near me', name: 'Clockwork Escape Room', kind: 'Activity', emoji: '🔐', price: '$$$', dist: '4.1 km', blurb: '60 minutes to escape a locked inventor’s study.', tags: ['Max 6 people', 'Book ahead'], hue: '#D2B8FF' },
-    { id: 'karaoke', q: 'karaoke near me', name: 'Echo Box Karaoke', kind: 'Karaoke', emoji: '🎤', price: '$$', dist: '2.7 km', blurb: 'Private rooms, 5,000+ songs, zero judgement.', tags: ['Private room', 'Open late'], hue: '#FFB0D2' },
-    { id: 'cafe', q: 'board game cafe near me', name: 'Paper Crane Board Game Café', kind: 'Café', emoji: '🎲', price: '$', dist: '0.8 km', blurb: '300 board games, waffles and quiet corners.', tags: ['Quiet', 'Step-free'], hue: '#FFE08A' },
+    { id: 'noodle', name: 'Lantern Noodle Bar', kind: 'Dinner', emoji: '🍜', price: '$$', dist: '1.2 km', blurb: 'Hand-pulled noodles and big shared tables.', tags: ['Step-free', 'Veg options'], hue: '#FFC48A' },
+    { id: 'bowling', name: 'Strike Social', kind: 'Bowling', emoji: '🎳', price: '$$', dist: '3.4 km', blurb: 'Retro lanes, arcade machines and milkshakes.', tags: ['Step-free', 'Groups of 6+'], hue: '#A9C4FF' },
+    { id: 'picnic', name: 'Botanic Gardens Picnic', kind: 'Outdoors', emoji: '🧺', price: 'Free', dist: '2.0 km', blurb: 'Bring snacks, find a shady lawn, stay till sunset.', tags: ['Free', 'Weather-dependent'], hue: '#A8E6B4', outdoor: true },
+    { id: 'escape', name: 'Clockwork Escape Room', kind: 'Activity', emoji: '🔐', price: '$$$', dist: '4.1 km', blurb: '60 minutes to escape a locked inventor’s study.', tags: ['Max 6 people', 'Book ahead'], hue: '#D2B8FF' },
+    { id: 'karaoke', name: 'Echo Box Karaoke', kind: 'Karaoke', emoji: '🎤', price: '$$', dist: '2.7 km', blurb: 'Private rooms, 5,000+ songs, zero judgement.', tags: ['Private room', 'Open late'], hue: '#FFB0D2' },
+    { id: 'cafe', name: 'Paper Crane Board Game Café', kind: 'Café', emoji: '🎲', price: '$', dist: '0.8 km', blurb: '300 board games, waffles and quiet corners.', tags: ['Quiet', 'Step-free'], hue: '#FFE08A' },
   ];
 
   // Types for places the group suggests themselves.
@@ -70,12 +70,29 @@
   function customPlace(c) {
     const k = KINDS[c.kind] || KINDS.other;
     const by = c.addedBy === state.me.id ? 'you' : ((state.friends.find((f) => f.id === c.addedBy) || {}).name || 'a friend');
-    return { id: c.id, q: c.name, name: c.name, kind: k.label, emoji: k.emoji, hue: k.hue, price: '', dist: '',
-      blurb: 'Suggested by ' + by + '.', tags: [], custom: true, addedBy: c.addedBy };
+    const d = c.details || null; // filled in by Google Places when the server has a key
+    const tags = [];
+    if (d) {
+      if (d.rating) tags.push('⭐ ' + d.rating.toFixed(1) + (d.reviews ? ' (' + d.reviews.toLocaleString() + ')' : ''));
+      if (d.openNow === true) tags.push('🟢 Open now');
+      if (d.openNow === false) tags.push('Closed now');
+      if (d.reservable) tags.push('📅 Takes reservations');
+    }
+    return { id: c.id, q: c.name, name: (d && d.name) || c.name, kind: k.label, emoji: k.emoji, hue: k.hue,
+      price: (d && d.price) || '', dist: '', blurb: (d && d.address) || 'Suggested by ' + by + '.',
+      hoursToday: d ? todaysHours(d.hours) : '', suggestedBy: by,
+      link: d && d.mapsUrl, website: d && d.website, tags: tags, custom: true, addedBy: c.addedBy };
+  }
+  // Google lists hours Monday-first: "Monday: 11:00 AM – 9:00 PM".
+  function todaysHours(lines) {
+    if (!lines || lines.length !== 7) return '';
+    const line = lines[(new Date().getDay() + 6) % 7] || '';
+    return line.replace(/^[^:]+:\s*/, '');
   }
   // Everything in the deck: built-in ideas first, then the group's own suggestions.
   function allPlaces() { return PLACES.concat(state.custom.map(customPlace)); }
-  const googleLink = (pl) => 'https://www.google.com/search?q=' + encodeURIComponent(pl.q || pl.name);
+  // Exact Google Maps page when we have one; otherwise a plain search for the name.
+  const googleLink = (pl) => pl.link || 'https://www.google.com/search?q=' + encodeURIComponent(pl.q || pl.name);
 
   const FRIEND_VOTES = {
     maya: { noodle: 1, bowling: 0, picnic: 1, escape: -1, karaoke: 1, cafe: 1 },
@@ -405,7 +422,7 @@
     return '' +
       '<section class="hero">' +
         '<div>' +
-          '<h1>Watch your plan <em>Bloom</em>.</h1>' +
+          '<h1>Watch your plan <em>Bloom</em></h1>' +
           '<p class="lede">Paint when you’re free, swipe on where to go. Plans that actually happen.</p>' +
           myGroupsHTML() +
           '<form class="start-card" id="startForm" novalidate>' +
@@ -430,23 +447,26 @@
         '</div>' +
       '</section>' +
       versusHTML() +
-      '<h2 class="section-title" id="how">Three steps. Zero arguments.</h2>' +
+      '<section class="how-section" id="how" aria-labelledby="howTitle">' +
+      '<p class="section-label">How it works</p>' +
+      '<h2 class="section-title" id="howTitle">Three steps. Zero arguments.</h2>' +
       '<ol class="how">' +
-        '<li><span class="step-n" aria-hidden="true">1</span><span class="ico" aria-hidden="true">🖌️</span><h3>Paint your time</h3><p>Drag across the hours you’re free. The brighter a square, the more friends can make it — the ⭐ is your sweet spot.</p></li>' +
+        '<li><span class="step-n" aria-hidden="true">1</span><span class="ico" aria-hidden="true">🖌️</span><h3>Paint your time</h3><p>Drag across the hours you’re free. The brighter a square, the more friends can make it.</p></li>' +
         '<li><span class="step-n" aria-hidden="true">2</span><span class="ico" aria-hidden="true">👆</span><h3>Swipe on places</h3><p>Love it, maybe, or pass. No debates, no “idk, you pick”. Step-free access is shown on every card.</p></li>' +
         '<li><span class="step-n" aria-hidden="true">3</span><span class="ico" aria-hidden="true">🌸</span><h3>Watch it bloom</h3><p>Every friend is a petal. When everyone’s in, you get one plan to add to your calendar.</p></li>' +
-      '</ol>';
+      '</ol></section>';
   }
   function versusHTML() {
     const chat = [
       ['L', '#7C5CFF', 'anyone free this weekend??'],
-      ['M', '#E4477A', 'maybe sat? not morning tho'],
+      ['M', '#E03131', 'maybe sat? not morning tho'],
       ['J', '#D9831A', 'i can do sun… or sat night'],
       ['L', '#7C5CFF', 'ok where do we go'],
       ['S', '#11966A', 'idk you pick 😅'],
-      ['M', '#E4477A', 'wait which day did we say'],
+      ['M', '#E03131', 'wait which day did we say'],
     ];
     return '<section class="versus" id="versus" aria-labelledby="versusTitle">' +
+      '<p class="section-label">Why Bloom?</p>' +
       '<h2 class="section-title" id="versusTitle">Sound familiar?</h2>' +
       '<div class="versus-grid">' +
         '<figure class="vs-card before"><figcaption><span class="vs-tag">Before</span> The group chat</figcaption>' +
@@ -457,7 +477,7 @@
           '<div class="mini-plan">' +
             '<div class="mini-grid" aria-hidden="true">' + Array.from({ length: 21 }, (_, i) => '<i style="--h:' + [0, .2, .4, 1, 1, .6, .2][i % 7] * (i > 6 && i < 14 ? 1 : .55) + '"></i>').join('') + '</div>' +
             '<p class="mp-when">⭐ Saturday 3–6pm</p><p class="mp-where">🍜 Lantern Noodle Bar</p>' +
-            '<p class="mp-who"><span class="av-stack">' + ['#2F6FEB', '#E4477A', '#D9831A', '#7C5CFF', '#11966A'].map((c, i) => '<span class="av sm" style="--c:' + c + '" aria-hidden="true">' + 'YMJPS'[i] + '</span>').join('') + '</span> 5 of 5 coming</p>' +
+            '<p class="mp-who"><span class="av-stack">' + ['#2F6FEB', '#E03131', '#D9831A', '#7C5CFF', '#11966A'].map((c, i) => '<span class="av sm" style="--c:' + c + '" aria-hidden="true">' + 'YMJPS'[i] + '</span>').join('') + '</span> 5 of 5 coming</p>' +
           '</div>' +
           '<p class="vs-foot">Decided in minutes, not days. 🌸</p></figure>' +
       '</div></section>';
@@ -477,9 +497,9 @@
     // Three schedules drifting together; the spark is where everyone overlaps.
     return '<svg class="hero-mark" viewBox="-150 -150 300 300">' +
       '<defs><radialGradient id="glow"><stop offset="0" stop-color="#FFD25E" stop-opacity=".9"/><stop offset="1" stop-color="#FFD25E" stop-opacity="0"/></radialGradient></defs>' +
-      '<circle class="ring r1" cx="0" cy="-42" r="80" fill="#FF5E8E"/>' +
-      '<circle class="ring r2" cx="-37" cy="24" r="80" fill="#9B5CFF"/>' +
-      '<circle class="ring r3" cx="37" cy="24" r="80" fill="#3B6BFF"/>' +
+      '<circle class="ring r1" cx="0" cy="-42" r="80" fill="#FF7A3D"/>' +
+      '<circle class="ring r2" cx="-37" cy="24" r="80" fill="#14B8A6"/>' +
+      '<circle class="ring r3" cx="37" cy="24" r="80" fill="#3B82F6"/>' +
       '<circle class="glow" cx="0" cy="2" r="46" fill="url(#glow)"/>' +
       '<path class="spark" d="M0 -26 L7 -6 L27 2 L7 9 L0 30 L-7 9 L-27 2 L-7 -6 Z" fill="#FFD25E"/>' +
       '</svg>';
@@ -572,7 +592,7 @@
           '<span class="tools-label">Quick fill</span>' +
           '<button type="button" class="chip-btn" data-fill="evenings">🌙 Evenings</button>' +
           '<button type="button" class="chip-btn" data-fill="weekend">☀️ Weekend</button>' +
-          '<button type="button" class="chip-btn quiet" data-fill="clear">Clear mine</button>' +
+          '<button type="button" class="chip-btn quiet" data-fill="clear">Clear</button>' +
         '</div>' +
         '<div class="legend" aria-hidden="true">' +
           '<span class="lg-item"><span class="ramp"></span><span class="lg-ends"><span>Nobody free</span><span>Everyone free</span></span></span>' +
@@ -802,7 +822,8 @@
         '<div class="places-side">' +
         '<form class="panel suggest" id="suggestForm" novalidate>' +
           '<h2 class="sub-title">Got another idea?</h2>' +
-          '<p class="suggest-sub">Add it to everyone’s deck — food, drinks, an activity, anything.</p>' +
+          '<p class="suggest-sub">Add it to everyone’s deck — food, drinks, an activity, anything.' +
+            (state.mode === 'live' && state.lookups ? ' We’ll pull in its hours, price and rating from Google.' : '') + '</p>' +
           '<div class="suggest-row">' +
             '<label class="sr-only" for="sgName">Place or idea</label>' +
             '<input id="sgName" maxlength="40" placeholder="e.g. Spicy noodle, bubble tea, rock climbing" autocomplete="off">' +
@@ -832,9 +853,11 @@
       '<div class="card-body"><h3>' + esc(pl.name) + '</h3>' +
         (pl.price || pl.dist ? '<div class="meta">' + [pl.price, pl.dist].filter(Boolean).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') +
         '<p class="blurb">' + esc(pl.blurb) + '</p>' +
+        (pl.hoursToday ? '<p class="hours">🕒 Today: ' + esc(pl.hoursToday) + '</p>' : '') +
+        (pl.custom && pl.link ? '<p class="by">Suggested by ' + esc(pl.suggestedBy) + '</p>' : '') +
         '<div class="meta-row">' +
           (pl.tags.length ? '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' : '') +
-          '<a class="g-link" href="' + googleLink(pl) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Look it up on Google <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
+          '<a class="g-link" href="' + googleLink(pl) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>' + (pl.link ? 'Open in Google Maps' : 'Look it up on Google') + ' <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
         '</div>' +
         (pl.outdoor ? '<div class="wx" data-wx hidden></div>' : '') +
         '<div class="card-friends" data-friends="' + pl.id + '"></div>' +
@@ -956,10 +979,13 @@
     if (!name) { err.textContent = 'Type a place or idea first.'; input.focus(); return; }
     if (allPlaces().some((p) => p.name.toLowerCase() === name.toLowerCase())) { err.textContent = '“' + name + '” is already in the deck.'; return; }
     if (state.mode === 'live') {
+      const btn = $('#suggestForm button[type="submit"]');
+      btn.disabled = true; btn.textContent = state.lookups ? 'Looking it up…' : 'Adding…';
       try {
         const data = await api('POST', '/groups/' + encodeURIComponent(state.group.id) + '/places', { name: name, kind: kind });
         applyState(data, false);
       } catch (ex) { err.textContent = ex.message; return; }
+      finally { btn.disabled = false; btn.textContent = '＋ Add'; }
     } else {
       state.custom.push({ id: 'p_demo' + Date.now(), name: name, kind: kind, addedBy: state.me.id });
       const idx = allPlaces().findIndex((p) => !(p.id in state.me.votes));
@@ -1116,7 +1142,8 @@
           '<div class="v">' + dateLong(run.d) + '</div><div class="sub">' + fmtHour(run.start) + ' – ' + fmtHour(run.end) + '</div></div></div>' +
         '<div class="plan-row"><span class="ico" aria-hidden="true">' + pl.emoji + '</span><div><div class="k">Where</div>' +
           '<div class="v">' + esc(pl.name) + '</div><div class="sub">' + esc([pl.kind, pl.price, pl.dist].concat(pl.tags).filter(Boolean).join(' · ')) +
-          ' · <a href="' + googleLink(pl) + '" target="_blank" rel="noopener">Look it up on Google ↗</a></div></div></div>' +
+          (pl.hoursToday ? '<br>🕒 Today: ' + esc(pl.hoursToday) : '') +
+          ' · <a href="' + googleLink(pl) + '" target="_blank" rel="noopener">' + (pl.link ? 'Open in Google Maps' : 'Look it up on Google') + ' ↗</a></div></div></div>' +
         weatherRow(run, pl) +
         '<div class="plan-row"><span class="ico" aria-hidden="true">👯</span><div><div class="k">Who’s coming · ' + run.who.length + ' of ' + total() + '</div>' +
           '<div class="going">' +
@@ -1453,6 +1480,7 @@
     state.friends = data.members.filter((m) => m.id !== data.me).map(toPerson);
     const knownPlaces = new Set(state.custom.map((c) => c.id));
     state.custom = data.places || [];
+    state.lookups = !!data.lookups;
     if (!first) {
       state.custom.filter((c) => !knownPlaces.has(c.id) && c.addedBy !== state.me.id).forEach((c) => {
         const who = state.friends.find((f) => f.id === c.addedBy);
