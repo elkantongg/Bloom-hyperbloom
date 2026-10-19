@@ -966,26 +966,29 @@
     if (allPlaces().some((p) => p.name.toLowerCase() === name.toLowerCase())) { err.textContent = '“' + name + '” is already in the deck.'; return; }
     const btn = $('#suggestForm button[type="submit"]');
     btn.disabled = true; btn.textContent = 'Searching…';
-    let found = null;
+    let found = null, approx = false;
     try {
       const res = await fetch('/api/lookup?q=' + encodeURIComponent(name) + '&kind=' + encodeURIComponent(kind));
-      if (res.ok) found = (await res.json()).results || [];
+      if (res.ok) { const data = await res.json(); found = data.results || []; approx = !!data.approximate; }
     } catch (ex) { /* no server (static hosting): skip straight to adding */ }
     btn.disabled = false; btn.textContent = '＋ Add';
     if (found === null) return saveSuggestion(name, kind, null);
-    showPicker(name, kind, found);
+    showPicker(name, kind, found, approx);
   }
 
-  function showPicker(name, kind, found) {
+  function showPicker(name, kind, found, approx) {
     const box = $('#sgPicker');
     const type = (KINDS[kind] || KINDS.other).label.toLowerCase();
-    box.innerHTML = '<p class="pick-title">' + (found.length ? (found.length === 1 ? 'Is this the one?' : 'Which one did you mean?')
-        : 'No ' + esc(type) + ' places called “' + esc(name) + '” on the map.') + '</p>' +
-      (found.length ? '' : '<p class="pick-hint">Try adding the area (e.g. “' + esc(name) + ' Tampines”), pick a different type, or add it as typed.</p>') +
-      '<ul>' + found.map((r, i) => '<li><button type="button" class="pick" data-i="' + i + '">' +
+    const missingNote = 'Our map doesn’t list every shop — especially ones inside malls. Add it anyway and the Google link on the card will find it.';
+    const title = !found.length ? 'We couldn’t find “' + esc(name) + '” on our map'
+      : approx ? 'No exact match — closest ' + esc(type) + ' places on the map'
+      : found.length === 1 ? 'Is this the one?' : 'Which one did you mean?';
+    box.innerHTML = '<p class="pick-title">' + title + '</p>' +
+      (!found.length || approx ? '<p class="pick-hint">' + missingNote + '</p>' : '') +
+      '<ul' + (approx ? ' class="approx"' : '') + '>' + found.map((r, i) => '<li><button type="button" class="pick" data-i="' + i + '">' +
         '<strong>' + esc(r.name || name) + (r.area ? ' · ' + esc(r.area) : '') + '</strong>' +
         '<span>' + esc([r.category, r.address].filter(Boolean).join(' · ')) + '</span></button></li>').join('') +
-      '<li><button type="button" class="pick plain" data-i="-1"><strong>' + (found.length ? 'None of these' : 'Add it anyway') + '</strong>' +
+      '<li><button type="button" class="pick plain" data-i="-1"><strong>' + (found.length && !approx ? 'None of these' : 'Add it anyway') + '</strong>' +
         '<span>Add “' + esc(name) + '” as typed</span></button></li></ul>';
     box.hidden = false;
     box.onclick = (ev) => {

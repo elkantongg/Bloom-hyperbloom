@@ -805,3 +805,22 @@ kbd {
 .pick strong { font-size: 14px; }
 .pick span { font-size: 12px; color: var(--muted); }
 .pick.plain { background: transparent; border-style: dashed; }
+
+/* Action bar: the main button fills the remaining space (no awkward gap) */
+.actionbar .ab-status { flex: 0 1 auto; }
+.actionbar .btn:not(.ghost) { flex: 1 1 260px; }
+
+/* Legend: colour scale takes half, "Your hours" and "Best time" a quarter each */
+.legend { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px 24px; align-items: center; }
+.lg-item:first-child { max-width: none; min-width: 0; }
+.lg-item:not(:first-child) { justify-content: center; }
+.legend .me-swatch, .legend .best-swatch { width: 34px; height: 20px; border-radius: 6px; }
+
+/* When matches are only "closest", show "Add it anyway" first */
+.picker ul.approx { display: flex; flex-direction: column; }
+.picker ul.approx li:last-child { order: -1; }
+
+@media (max-width: 600px) {
+  .legend { grid-template-columns: 1fr 1fr; }
+  .lg-item:first-child { grid-column: 1 / -1; }
+}

@@ -465,12 +465,20 @@ class Handler(BaseHTTPRequestHandler):
         LOOKUP_HITS[ip] = recent + [time.time()]
         if len(LOOKUP_HITS) > 5000:
             LOOKUP_HITS.clear()
+        kind = kind if kind in KINDS else "other"
+        results, used = [], query
         try:
-            results = osm_lookup(query, kind if kind in KINDS else "other")
+            results = osm_lookup(query, kind)
+            # Nothing found? Mall or area names often aren't in the map data
+            # ("hot hideout cineleisure"), so retry with fewer words.
+            words = query.split()
+            while not results and len(words) > 2:
+                words = words[:-1]
+                used = " ".join(words)
+                results = osm_lookup(used, kind)
         except (urllib.error.URLError, ValueError, TimeoutError, OSError) as e:
             print(f"Place lookup failed for {query!r}: {e}")
-            results = []
-        self.send_json(200, {"results": results})
+        self.send_json(200, {"results": results, "approximate": bool(results) and used != query, "used": used})
 
     def add_place(self, gid):
         body = self.read_body()
