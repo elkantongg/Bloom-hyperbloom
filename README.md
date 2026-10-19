@@ -1,4 +1,4 @@
-# Bloom 🌸 — plans that actually happen
+# Bloom — plans that actually happen
 
 Paint when you're free, swipe on where to go, and watch your group's plan bloom.
 
@@ -11,7 +11,7 @@ Making plans with friends dies in the group chat: "when's everyone free?", "idk,
 3. **Bloom** — each person is a petal that opens as they add times and vote. When the group agrees, you get one clear plan card: when, where, who's coming — add it to your calendar or copy the invite to the group chat.
 
 ## Accessibility & inclusive design
-- **Accessibility menu** (♿ in the header): bigger text, numbers on the grid (so colour is never the only signal), calm mode (no animation/confetti), high contrast. Saved per device.
+- **Accessibility menu** (stickman in the header): bigger text, numbers on the grid (so colour is never the only signal), calm mode (no animation/confetti), high contrast. Saved per device.
 - Full keyboard support: roving-focus grid (arrow keys, Space to toggle, Shift+arrow to paint), ←/↑/→ to vote, Esc closes menus.
 - Screen-reader labels on every grid cell ("Saturday 3pm. You're free. 5 of 5 free: Maya, Jun, Priya, Sam"), live announcements when friends join, milestones and votes.
 - 44px+ touch targets, visible focus rings, light/dark themes, respects `prefers-reduced-motion`, step-free access shown on every place card.
