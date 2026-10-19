@@ -212,8 +212,6 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 96px; }
   animation: float 6s ease-in-out infinite;
 }
 .floating small { display: block; color: var(--muted); font-weight: 500; font-size: 12px; }
-.floating.f1 { top: 8%; left: -4%; }
-.floating.f2 { bottom: 14%; right: -2%; animation-delay: -2s; }
 .floating.f3 { bottom: -2%; left: 6%; animation-delay: -4s; }
 @keyframes float { 50% { transform: translateY(-10px); } }
 
@@ -779,9 +777,6 @@ kbd {
 .legend { justify-content: space-between; gap: 12px 32px; padding: 12px 20px; }
 .lg-item:first-child { flex: 1 1 260px; max-width: 460px; }
 
-/* Real place details */
-.card-body .hours { font-size: 14px; font-weight: 600; }
-.card-body .by { font-size: 12px; color: var(--muted); }
 
 @media (max-width: 600px) {
   .grid-tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -790,15 +785,23 @@ kbd {
   .how-section { margin-top: 80px; }
 }
 
-/* Branch picker for suggestions */
+
+/* Legend: shorter colour scale, roomier "Your hours" / "Best time" */
+.legend { justify-content: flex-start; gap: 12px 40px; }
+.lg-item:first-child { flex: 0 1 240px; min-width: 200px; max-width: 240px; }
+.lg-item { font-size: 14px; gap: 10px; }
+.legend .me-swatch, .legend .best-swatch { width: 20px; height: 20px; }
+
+/* Confirm-the-place list */
 .picker { margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; padding: 10px; background: var(--bg); }
 .pick-title { font-weight: 700; font-size: 14px; margin: 2px 4px 8px; }
-.picker ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+.pick-hint { font-size: 13px; color: var(--muted); margin: -4px 4px 10px; }
+.picker ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 300px; overflow: auto; }
 .pick {
-  width: 100%; text-align: left; display: grid; gap: 2px; cursor: pointer;
+  width: 100%; text-align: left; display: grid; gap: 2px; cursor: pointer; min-height: 44px;
   padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
 }
 .pick:hover { border-color: var(--accent); }
 .pick strong { font-size: 14px; }
 .pick span { font-size: 12px; color: var(--muted); }
-.pick.plain { background: transparent; }
+.pick.plain { background: transparent; border-style: dashed; }

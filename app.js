@@ -70,32 +70,15 @@
   function customPlace(c) {
     const k = KINDS[c.kind] || KINDS.other;
     const by = c.addedBy === state.me.id ? 'you' : ((state.friends.find((f) => f.id === c.addedBy) || {}).name || 'a friend');
-    const d = c.details || null; // from Google Places or OpenStreetMap, picked when the idea was added
-    const tags = [];
-    if (d) {
-      if (d.stepFree) tags.push('Step-free');
-      if (d.veg) tags.push('Veg options');
-      if (d.rating) tags.push('⭐ ' + Number(d.rating).toFixed(1) + (d.reviews ? ' (' + Number(d.reviews).toLocaleString() + ')' : ''));
-      if (d.openNow === true) tags.push('🟢 Open now');
-      if (d.openNow === false) tags.push('Closed now');
-      if (d.reservable) tags.push('📅 Takes reservations');
-    }
-    // c.name already includes the branch, e.g. "Din Tai Fung (Jurong East)".
+    const d = c.details || null; // the place the person confirmed from the list, if any
     return { id: c.id, q: c.name, name: c.name, kind: (d && d.category) || k.label, emoji: k.emoji, hue: k.hue,
-      price: (d && d.price) || '', dist: (d && d.area) || '', blurb: (d && d.address) || 'Suggested by ' + by + '.',
-      hoursToday: d ? (todaysHours(d.hours) || d.hoursText || '') : '', suggestedBy: by,
-      link: d && d.mapsUrl, website: d && d.website, tags: tags, custom: true, addedBy: c.addedBy };
-  }
-  // Google lists hours Monday-first: "Monday: 11:00 AM – 9:00 PM".
-  function todaysHours(lines) {
-    if (!lines || lines.length !== 7) return '';
-    const line = lines[(new Date().getDay() + 6) % 7] || '';
-    return line.replace(/^[^:]+:\s*/, '');
+      price: '', dist: (d && d.area) || '',
+      blurb: d && d.address ? d.address + ' · Suggested by ' + by + '.' : 'Suggested by ' + by + '. Tap the Google link to check hours, prices and reviews.',
+      tags: [], custom: true, addedBy: c.addedBy };
   }
   // Everything in the deck: built-in ideas first, then the group's own suggestions.
   function allPlaces() { return PLACES.concat(state.custom.map(customPlace)); }
-  // Exact Google Maps page when we have one; otherwise a plain search for the name.
-  const googleLink = (pl) => pl.link || 'https://www.google.com/search?q=' + encodeURIComponent(pl.q || pl.name);
+  const googleLink = (pl) => 'https://www.google.com/search?q=' + encodeURIComponent(pl.q || pl.name);
 
   const FRIEND_VOTES = {
     maya: { noodle: 1, bowling: 0, picnic: 1, escape: -1, karaoke: 1, cafe: 1 },
@@ -430,9 +413,9 @@
           myGroupsHTML() +
           '<form class="start-card" id="startForm" novalidate>' +
             '<div class="field"><label for="planTitle">What’s the plan?</label>' +
-              '<input id="planTitle" name="title" value="' + esc(state.title) + '" maxlength="40" autocomplete="off" required></div>' +
+              '<input id="planTitle" name="title" placeholder="e.g. Weekend hangout" maxlength="40" autocomplete="off" required></div>' +
             '<div class="field"><label for="myName">Your name</label>' +
-              '<input id="myName" name="name" placeholder="e.g. Alex" maxlength="20" autocomplete="given-name" required value="' + (state.me.name === 'You' ? '' : esc(state.me.name)) + '"></div>' +
+              '<input id="myName" name="name" placeholder="e.g. John" maxlength="20" autocomplete="given-name" required></div>' +
             '<div class="field"><label for="groupPw">Group password</label>' +
               '<input id="groupPw" name="password" type="password" minlength="4" maxlength="64" autocomplete="new-password" required aria-describedby="pwHint">' +
               '<span class="hint" id="pwHint">Friends need this to join. Share it separately from the link (at least 4 characters).</span></div>' +
@@ -444,8 +427,6 @@
         '</div>' +
         '<div class="hero-art" aria-hidden="true">' +
           heroMark() +
-          '<div class="floating f1">' + '<span class="av sm" style="--c:#7C5CFF">P</span><div>Priya is free<small>Sat 10am–6pm</small></div></div>' +
-          '<div class="floating f2">🍜<div>3 yes votes<small>Lantern Noodle Bar</small></div></div>' +
           '<div class="floating f3">✨<div>Everyone’s free!<small>Sat 3–6pm</small></div></div>' +
         '</div>' +
       '</section>' +
@@ -825,7 +806,7 @@
         '<div class="places-side">' +
         '<form class="panel suggest" id="suggestForm" novalidate>' +
           '<h2 class="sub-title">Got another idea?</h2>' +
-          '<p class="suggest-sub">Add it to everyone’s deck — we’ll look it up and fill in the details. Add an area for a specific branch, like “Din Tai Fung Tampines”.</p>' +
+          '<p class="suggest-sub">Add it to everyone’s deck. Pick the type first — we’ll ask you to confirm the exact place. Add an area for a specific branch, like “Din Tai Fung Tampines”.</p>' +
           '<div class="suggest-row">' +
             '<label class="sr-only" for="sgName">Place or idea</label>' +
             '<input id="sgName" maxlength="40" placeholder="e.g. Din Tai Fung Tampines" autocomplete="off">' +
@@ -856,11 +837,10 @@
       '<div class="card-body"><h3>' + esc(pl.name) + '</h3>' +
         (pl.price || pl.dist ? '<div class="meta">' + [pl.price, pl.dist].filter(Boolean).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') +
         '<p class="blurb">' + esc(pl.blurb) + '</p>' +
-        (pl.hoursToday ? '<p class="hours">🕒 Today: ' + esc(pl.hoursToday) + '</p>' : '') +
-        (pl.custom && pl.blurb.indexOf('Suggested by') !== 0 ? '<p class="by">Suggested by ' + esc(pl.suggestedBy) + '</p>' : '') +
+
         '<div class="meta-row">' +
           (pl.tags.length ? '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' : '') +
-          '<a class="g-link" href="' + googleLink(pl) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>' + (pl.link ? 'Open in Google Maps' : 'Look it up on Google') + ' <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
+          '<a class="g-link" href="' + googleLink(pl) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Look it up on Google <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
         '</div>' +
         (pl.outdoor ? '<div class="wx" data-wx hidden></div>' : '') +
         '<div class="card-friends" data-friends="' + pl.id + '"></div>' +
@@ -974,6 +954,8 @@
     if (top) top.focus({ preventScroll: true });
   }
 
+  // Look the idea up, then ALWAYS ask the person to confirm which place they mean
+  // (e.g. which Din Tai Fung branch), so nothing wrong sneaks into the deck.
   async function addSuggestion(e) {
     e.preventDefault();
     const input = $('#sgName'), err = $('#sgError');
@@ -983,25 +965,28 @@
     if (!name) { err.textContent = 'Type a place or idea first.'; input.focus(); return; }
     if (allPlaces().some((p) => p.name.toLowerCase() === name.toLowerCase())) { err.textContent = '“' + name + '” is already in the deck.'; return; }
     const btn = $('#suggestForm button[type="submit"]');
-    btn.disabled = true; btn.textContent = 'Looking it up…';
-    let found = [];
+    btn.disabled = true; btn.textContent = 'Searching…';
+    let found = null;
     try {
-      const res = await fetch('/api/lookup?q=' + encodeURIComponent(name));
+      const res = await fetch('/api/lookup?q=' + encodeURIComponent(name) + '&kind=' + encodeURIComponent(kind));
       if (res.ok) found = (await res.json()).results || [];
-    } catch (ex) { /* offline or static hosting: just add it as typed */ }
+    } catch (ex) { /* no server (static hosting): skip straight to adding */ }
     btn.disabled = false; btn.textContent = '＋ Add';
-    if (found.length > 1) return showPicker(name, kind, found);
-    await saveSuggestion(name, kind, found[0] || null);
+    if (found === null) return saveSuggestion(name, kind, null);
+    showPicker(name, kind, found);
   }
 
-  // Several matches (e.g. "Din Tai Fung" has many branches): let the person choose.
   function showPicker(name, kind, found) {
     const box = $('#sgPicker');
-    box.innerHTML = '<p class="pick-title">Which one did you mean?</p><ul>' +
-      found.map((r, i) => '<li><button type="button" class="pick" data-i="' + i + '">' +
+    const type = (KINDS[kind] || KINDS.other).label.toLowerCase();
+    box.innerHTML = '<p class="pick-title">' + (found.length ? (found.length === 1 ? 'Is this the one?' : 'Which one did you mean?')
+        : 'No ' + esc(type) + ' places called “' + esc(name) + '” on the map.') + '</p>' +
+      (found.length ? '' : '<p class="pick-hint">Try adding the area (e.g. “' + esc(name) + ' Tampines”), pick a different type, or add it as typed.</p>') +
+      '<ul>' + found.map((r, i) => '<li><button type="button" class="pick" data-i="' + i + '">' +
         '<strong>' + esc(r.name || name) + (r.area ? ' · ' + esc(r.area) : '') + '</strong>' +
-        '<span>' + esc([r.category, r.price, r.address].filter(Boolean).join(' · ')) + '</span></button></li>').join('') +
-      '<li><button type="button" class="pick plain" data-i="-1"><strong>None of these</strong><span>Add “' + esc(name) + '” as typed</span></button></li></ul>';
+        '<span>' + esc([r.category, r.address].filter(Boolean).join(' · ')) + '</span></button></li>').join('') +
+      '<li><button type="button" class="pick plain" data-i="-1"><strong>' + (found.length ? 'None of these' : 'Add it anyway') + '</strong>' +
+        '<span>Add “' + esc(name) + '” as typed</span></button></li></ul>';
     box.hidden = false;
     box.onclick = (ev) => {
       const b = ev.target.closest('.pick');
@@ -1012,17 +997,19 @@
     };
     const first = box.querySelector('.pick');
     if (first) first.focus();
-    announce(found.length + ' matches for ' + name + '. Pick one.');
+    announce(found.length ? found.length + ' matches for ' + name + '. Pick one.' : 'No matches. You can add it as typed.');
   }
   function hidePicker() {
     const box = $('#sgPicker');
     if (box) { box.hidden = true; box.innerHTML = ''; }
   }
 
-  async function saveSuggestion(name, kind, details) {
+  async function saveSuggestion(name, kind, match) {
     const err = $('#sgError');
-    let label = details && details.area ? (details.name || name) + ' (' + details.area + ')' : name;
+    let label = match ? (match.name || name) + (match.area ? ' (' + match.area + ')' : '') : name;
     if (label.length > 40) label = label.slice(0, 39) + '…';
+    if (allPlaces().some((p) => p.name.toLowerCase() === label.toLowerCase())) { if (err) err.textContent = '“' + label + '” is already in the deck.'; return; }
+    const details = match ? { area: match.area, address: match.address, category: match.category } : null;
     if (state.mode === 'live') {
       try {
         const data = await api('POST', '/groups/' + encodeURIComponent(state.group.id) + '/places', { name: label, kind: kind, details: details });
@@ -1037,9 +1024,8 @@
     if (input) input.value = '';
     renderDeck();
     refresh();
-    const shown = details ? (details.name || name) + (details.area ? ' · ' + details.area : '') : name;
-    toast(null, '✨ Added ' + shown + (details ? '' : ' (no map details found)'));
-    announce(shown + ' added to the deck.');
+    toast(null, '✨ Added “' + label + '” to everyone’s deck');
+    announce(label + ' added to the deck.');
   }
 
   function renderRanking() {
@@ -1186,8 +1172,7 @@
           '<div class="v">' + dateLong(run.d) + '</div><div class="sub">' + fmtHour(run.start) + ' – ' + fmtHour(run.end) + '</div></div></div>' +
         '<div class="plan-row"><span class="ico" aria-hidden="true">' + pl.emoji + '</span><div><div class="k">Where</div>' +
           '<div class="v">' + esc(pl.name) + '</div><div class="sub">' + esc([pl.kind, pl.price, pl.dist].concat(pl.tags).filter(Boolean).join(' · ')) +
-          (pl.hoursToday ? '<br>🕒 Today: ' + esc(pl.hoursToday) : '') +
-          ' · <a href="' + googleLink(pl) + '" target="_blank" rel="noopener">' + (pl.link ? 'Open in Google Maps' : 'Look it up on Google') + ' ↗</a></div></div></div>' +
+          ' · <a href="' + googleLink(pl) + '" target="_blank" rel="noopener">Look it up on Google ↗</a></div></div></div>' +
         weatherRow(run, pl) +
         '<div class="plan-row"><span class="ico" aria-hidden="true">👯</span><div><div class="k">Who’s coming · ' + run.who.length + ' of ' + total() + '</div>' +
           '<div class="going">' +
@@ -1524,7 +1509,6 @@
     state.friends = data.members.filter((m) => m.id !== data.me).map(toPerson);
     const knownPlaces = new Set(state.custom.map((c) => c.id));
     state.custom = data.places || [];
-    state.lookups = !!data.lookups;
     if (!first) {
       state.custom.filter((c) => !knownPlaces.has(c.id) && c.addedBy !== state.me.id).forEach((c) => {
         const who = state.friends.find((f) => f.id === c.addedBy);
