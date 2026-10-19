@@ -1,6 +1,6 @@
 // Step 2: swiping on places and suggesting new ones.
 import { $, $$, esc, reduceMotion } from './util.js';
-import { allPlaces, commonsImage, commonsPage, currentVotes, FRIEND_VOTES, googleLink, KINDS, PLACES, votedCount } from './data.js';
+import { allPlaces, commonsImage, commonsPage, currentVotes, FRIEND_VOTES, googleLink, KINDS, placeTitle, PLACES, votedCount } from './data.js';
 import { people, state, total } from './state.js';
 import { rankPlaces } from './derive.js';
 import { announce, avatarStack, buzz, namesList, refresh, sidebarHTML, toast } from './ui.js';
@@ -43,7 +43,7 @@ export function cardHTML(pl, depth) {
   const photo = pl.photoUrl ? { src: pl.photoUrl, credit: pl.photoCredit, href: pl.photoCreditUrl }
     : pl.photo ? { src: commonsImage(pl.photo), credit: 'Photo: Wikimedia Commons', href: commonsPage(pl.photo) } : {};
   return '<article class="card" data-id="' + pl.id + '" data-depth="' + depth + '" style="--depth:' + depth + ';--hue:' + pl.hue + '"' +
-    (top ? ' tabindex="0" aria-label="' + esc([pl.name, pl.kind, pl.price, pl.dist].filter(Boolean).join(', ') + '. ' + pl.blurb + ' ' + pl.tags.join(', ')) + '"' : ' aria-hidden="true"') + '>' +
+    (top ? ' tabindex="0" aria-label="' + esc([placeTitle(pl), pl.kind, pl.price, pl.dist].filter(Boolean).join(', ') + '. ' + pl.blurb + ' ' + pl.tags.join(', ')) + '"' : ' aria-hidden="true"') + '>' +
     '<span class="stamp yes" aria-hidden="true">LOVE IT</span><span class="stamp no" aria-hidden="true">PASS</span><span class="stamp maybe" aria-hidden="true">MAYBE</span>' +
     // Photo on top of a coloured gradient + emoji, which shows if the photo can't load.
     '<div class="card-art"><span aria-hidden="true">' + pl.emoji + '</span>' +
@@ -52,7 +52,7 @@ export function cardHTML(pl, depth) {
           : '<span class="photo-credit">' + esc(photo.credit) + '</span>')
         : pl.map ? mapHTML(pl.map, top) : '') +
       '<span class="kind">' + esc(pl.kind) + '</span></div>' +
-    '<div class="card-body"><h3 style="font-size:' + Math.max(18, 24 - Math.max(0, pl.name.length - 35) * 0.12) + 'px">' + esc(pl.name) + '</h3>' +
+    '<div class="card-body"><h3 style="font-size:' + Math.max(18, 24 - Math.max(0, placeTitle(pl).length - 35) * 0.12) + 'px">' + esc(placeTitle(pl)) + '</h3>' +
       (pl.price || pl.dist ? '<div class="meta">' + [pl.price, pl.dist].filter(Boolean).map((t) => '<span>' + esc(t) + '</span>').join('') + '</div>' : '') +
       (pl.blurb ? '<p class="blurb">' + esc(pl.blurb) + '</p>' : '') +
       (pl.suggestedBy ? '<p class="by">' + esc(pl.suggestedBy) + '</p>' : '') +
@@ -60,12 +60,12 @@ export function cardHTML(pl, depth) {
 
       '<div class="meta-row">' +
         (pl.tags.length ? '<div class="tags">' + pl.tags.map((t) => '<span class="tag">' + (t === 'Step-free' ? '♿ ' : '') + esc(t) + '</span>').join('') + '</div>' : '') +
-        (pl.website ? '<a class="g-link" href="' + esc(pl.website) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Quick link <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' : '') +
+        (pl.website ? '<a class="g-link" href="' + esc(pl.website) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>Quick Search <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' : '') +
         '<a class="g-link" href="' + esc(googleLink(pl)) + '" target="_blank" rel="noopener"' + (top ? '' : ' tabindex="-1"') + '>' + (pl.linkLabel || 'Look it up on Google') + ' <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>' +
       '</div>' +
       (pl.outdoor ? '<div class="wx" data-wx hidden></div>' : '') +
       '<div class="card-footer"><div class="card-friends" data-friends="' + pl.id + '"></div>' +
-      (pl.custom ? editButton(state.custom.find((x) => x.id === pl.id), pl.name) : '') + '</div>' +
+      (pl.custom ? editButton(state.custom.find((x) => x.id === pl.id), placeTitle(pl)) : '') + '</div>' +
     '</div></article>';
 }
 
@@ -182,7 +182,7 @@ export function vote(v) {
     renderDeck();
     refresh();
     const next = allPlaces()[state.deckIndex];
-    announce(word + ' to ' + pl.name + '. ' + (next ? 'Next: ' + next.name + ', ' + next.kind + '.' : 'That was the last place.'));
+    announce(word + ' to ' + placeTitle(pl) + '. ' + (next ? 'Next: ' + placeTitle(next) + ', ' + next.kind + '.' : 'That was the last place.'));
     const top = $('#deck .card[data-depth="0"]');
     if (top && !(document.activeElement && document.activeElement.closest('#voteBtns'))) top.focus({ preventScroll: true });
   }, reduceMotion ? 10 : 320);
@@ -198,7 +198,7 @@ export function undoVote() {
   state.deckIndex = lastIdx;
   renderDeck();
   refresh();
-  announce('Undone. ' + pl.name + ' is back on top.');
+  announce('Undone. ' + placeTitle(pl) + ' is back on top.');
   const top = $('#deck .card[data-depth="0"]');
   if (top) top.focus({ preventScroll: true });
 }
@@ -243,7 +243,7 @@ export function renderRanking() {
   } else {
     ol.innerHTML = ranked.map((p) =>
       '<li><span class="emoji" aria-hidden="true">' + p.emoji + '</span>' +
-      '<div><div class="name">' + esc(p.name) + (p.custom ? ' ' + editButton(state.custom.find((x) => x.id === p.id), p.name) : '') + '</div>' +
+      '<div><div class="name">' + esc(placeTitle(p)) + (p.custom ? ' ' + editButton(state.custom.find((x) => x.id === p.id), placeTitle(p)) : '') + '</div>' +
       '<div class="bar" aria-hidden="true"><i style="--w:' + Math.round((p.points / (2 * total())) * 100) + '%"></i></div>' +
       '<span class="sr-only">' + p.yes.length + ' yes, ' + p.maybe.length + ' maybe, ' + p.no.length + ' no.</span></div>' +
       avatarStack(p.yes) + '</li>').join('');

@@ -4,6 +4,8 @@
   "private": true,
   "description": "Because “soon” isn't a date",
   "scripts": {
-    "start": "python3 server.py"
+    "start": "python3 server.py",
+    "build-index": "python3 placesearch.py build",
+    "test": "python3 -m unittest discover tests"
   }
 }

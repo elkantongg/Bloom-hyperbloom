@@ -1,7 +1,7 @@
 // Step 3: the final plan card, calendar file and nudges.
 import { $, $$, esc, reduceMotion, store } from './util.js';
 import { dateLong, DAYS, dayShort, fmtHour, fmtRange, setWeek } from './dates.js';
-import { allPlaces, googleLink, votedCount } from './data.js';
+import { allPlaces, googleLink, placeTitle, votedCount } from './data.js';
 import { FRIENDS, people, state, total } from './state.js';
 import { bloomScore, chosenPlace, chosenRun, computeRuns, rankPlaces } from './derive.js';
 import { announce, avatar, avatarStack, copy, displayName, flowerSVG, namesList, toast, updateFlowers } from './ui.js';
@@ -33,7 +33,7 @@ export function bloomHTML() {
         '</div></fieldset>' +
         '<fieldset class="choice-group"><legend>Place</legend><div class="choices">' +
           places.map((p) => '<label><input type="radio" name="place" value="' + p.id + '"' + (p.id === state.pickPlace ? ' checked' : '') + '>' +
-            p.emoji + ' ' + esc(p.name) + '</label>').join('') +
+            p.emoji + ' ' + esc(placeTitle(p)) + '</label>').join('') +
         '</div></fieldset>' +
       '</details>' +
     '</div>' +
@@ -47,7 +47,7 @@ export function tieHTML() {
   const same = (a, b) => a.points === b.points && a.yes.length === b.yes.length && a.no.length === b.no.length;
   const tied = r.filter((p) => same(p, r[0]));
   if (tied.length < 2) return '';
-  return '<p class="tie-note">🤝 It’s a tie between ' + esc(tied.map((p) => p.name).join(' and ')) +
+  return '<p class="tie-note">🤝 It’s a tie between ' + esc(tied.map(placeTitle).join(' and ')) +
     '. We picked one — use <strong>Change the time or place</strong> to swap.</p>';
 }
 export function renderWaiting() {
@@ -85,7 +85,7 @@ export function inviteText(run, pl) {
   const lines = [
     '🌸 ' + state.title + ' — it’s a plan!',
     '🗓️ ' + dateLong(run.d) + ', ' + fmtHour(run.start) + '–' + fmtHour(run.end),
-    '📍 ' + [pl.name, pl.dist].filter(Boolean).join(' · '),
+    '📍 ' + [placeTitle(pl), pl.dist].filter(Boolean).join(' · '),
     '🔗 ' + googleLink(pl),
     '👯 ' + run.who.map((p) => p.name).join(', ') + (out.length ? ' (' + out.map((p) => p.name).join(', ') + ' can’t make it)' : ''),
   ];
@@ -113,9 +113,9 @@ export function renderPlanCard() {
       '<div class="plan-row"><span class="ico" aria-hidden="true">🗓️</span><div><div class="k">When</div>' +
         '<div class="v">' + dateLong(run.d) + '</div><div class="sub">' + fmtHour(run.start) + ' – ' + fmtHour(run.end) + '</div></div></div>' +
       '<div class="plan-row"><span class="ico" aria-hidden="true">' + pl.emoji + '</span><div><div class="k">Where</div>' +
-        '<div class="v">' + esc(pl.name) + '</div><div class="sub">' + esc([pl.kind, pl.price, pl.dist].concat(pl.tags).filter(Boolean).join(' · ')) +
+        '<div class="v">' + esc(placeTitle(pl)) + '</div><div class="sub">' + esc([pl.kind, pl.price, pl.dist].concat(pl.tags).filter(Boolean).join(' · ')) +
         (pl.hoursToday ? '<br>🕒 Hours: ' + esc(pl.hoursToday) : '') +
-        (pl.website ? '<br><a href="' + esc(pl.website) + '" target="_blank" rel="noopener">Quick link ↗</a>' : '') + '<br>' +
+        (pl.website ? '<br><a href="' + esc(pl.website) + '" target="_blank" rel="noopener">Quick Search ↗</a>' : '') + '<br>' +
         '<a href="' + esc(googleLink(pl)) + '" target="_blank" rel="noopener">' + (pl.linkLabel || 'Look it up on Google') + ' ↗</a></div></div></div>' +
       weatherRow(run, pl) +
       '<div class="plan-row"><span class="ico" aria-hidden="true">👯</span><div><div class="k">Who’s coming · ' + run.who.length + ' of ' + total() + '</div>' +

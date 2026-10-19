@@ -1,7 +1,7 @@
 // Shared UI pieces: toasts, avatars, the flower, the side panel, milestones.
 import { $, $$, esc, reduceMotion } from './util.js';
 import { dayLong, dayShort, fmtRange } from './dates.js';
-import { allPlaces, votedCount } from './data.js';
+import { allPlaces, placeTitle, votedCount } from './data.js';
 import { people, state, total } from './state.js';
 import { bloomScore, computeRuns, personProgress, rankPlaces } from './derive.js';
 import { updateStepper } from './router.js';
@@ -156,7 +156,7 @@ export function checkMilestones() {
   const top = rankPlaces()[0];
   if (!m.fav && top && top.yes.length >= Math.max(2, Math.ceil(total() * 0.6))) {
     m.fav = true;
-    celebrate('🔥 ' + top.name + ' is the group favourite');
+    celebrate('🔥 ' + placeTitle(top) + ' is the group favourite');
   }
 }
 export function celebrate(msg) {

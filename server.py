@@ -24,6 +24,8 @@ import urllib.parse
 import urllib.request
 from urllib.parse import parse_qs, urlparse
 
+import placesearch
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -55,7 +57,7 @@ STATIC = {
 }
 
 COLORS = ["#2F6FEB", "#E03131", "#D9831A", "#7C5CFF", "#11966A", "#0E8E9C", "#B4469B", "#8A6D1F", "#C2410C", "#4F46E5", "#0F766E", "#BE185D"]
-KINDS = {"food", "drinks", "activity", "other"}
+KINDS = {"food", "drinks", "activity", "shopping", "other"}
 MAX_CUSTOM_PLACES = 20
 MAX_PLACE_NAME = 80  # e.g. "Escape Room (Orchard Gateway)"
 MAX_MEMBERS = 12
@@ -169,56 +171,36 @@ def maps_url(name, address):
     return "https://www.google.com/maps/search/?api=1&query=" + urllib.parse.quote(q)
 
 
-def osm_kind(category, value):
-    if value in ("restaurant", "fast_food", "food_court", "ice_cream", "bakery", "deli"):
-        return "food"
-    if value in ("cafe", "bar", "pub", "biergarten", "tea", "coffee", "beverages"):
-        return "drinks"
-    return "activity"
-
-
-# What counts as each type in the "Got another idea?" dropdown (OpenStreetMap tags).
-FOOD = {"amenity": {"restaurant", "fast_food", "food_court", "ice_cream"},
-        "shop": {"bakery", "deli", "pastry", "confectionery", "chocolate"}}
-DRINKS = {"amenity": {"cafe", "bar", "pub", "biergarten"},
-          "shop": {"tea", "coffee", "beverages", "alcohol", "wine"}}
-ACTIVITY_KEYS = {"leisure", "tourism", "natural", "craft", "sport", "historic", "place", "building"}
-ACTIVITY_AMENITY = {"cinema", "theatre", "arts_centre", "karaoke_box", "nightclub", "events_venue",
-                    "community_centre", "casino", "library", "planetarium", "studio", "spa"}
-ACTIVITY_SHOP = {"pottery", "craft", "art", "games", "books", "music", "massage", "beauty", "sports"}
-FILLER = {"class", "classes", "lesson", "lessons", "workshop", "workshops", "course", "courses",
-          "near", "me", "nearby", "place", "places", "the", "in", "singapore", "sg"}
-
-
-def tag_in(rules, key, value):
-    return value in rules.get(key, set())
-
-
-def matches_kind(key, value, kind):
-    if kind == "food":
-        return tag_in(FOOD, key, value)
-    if kind == "drinks":
-        return tag_in(DRINKS, key, value)
-    if kind == "activity":
-        return (key in ACTIVITY_KEYS or (key == "amenity" and value in ACTIVITY_AMENITY)
-                or (key == "shop" and value in ACTIVITY_SHOP))
-    return True  # "Something else": anything
-
-
-def nice_label(value):
-    return (value or "").replace("_", " ").capitalize() if value not in ("yes", "no") else ""
+# Types, category words and name matching live in placesearch.py (shared with the index).
+kind_of, matches_kind, nice_label = placesearch.kind_of, placesearch.matches_kind, placesearch.nice_label
+PAGE = 10                  # suggestions shown at a time ("Show more results" loads the next 10)
+PHOTON_MODE = os.environ.get("BLOOM_PHOTON_MODE", "auto")  # auto | always | off
+PHOTON_PAUSE = [0.0, 30.0]  # [paused until, next pause length]: back off when Photon is busy
 
 
 def photon_query(text, kind):
+    """Photon (free OpenStreetMap geocoder): up to 25 named places, Singapore only."""
+    if time.time() < PHOTON_PAUSE[0]:
+        raise TimeoutError("Photon paused after errors")
     qs = urllib.parse.urlencode({"q": text, "limit": 25, "lang": "en", "bbox": SG_BBOX,
                                  "lat": 1.3521, "lon": 103.8198})
-    with urllib.request.urlopen(urllib.request.Request(PHOTON + "?" + qs, headers={"User-Agent": UA}), timeout=6) as r:
-        features = json.loads(r.read()).get("features") or []
+    try:
+        with urllib.request.urlopen(urllib.request.Request(PHOTON + "?" + qs, headers={"User-Agent": UA}), timeout=5) as r:
+            features = json.loads(r.read()).get("features") or []
+        PHOTON_PAUSE[1] = 30.0
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        # Busy or down: stop asking for a while (30 s, doubling to 15 min).
+        PHOTON_PAUSE[0] = time.time() + PHOTON_PAUSE[1]
+        PHOTON_PAUSE[1] = min(PHOTON_PAUSE[1] * 2, 900.0)
+        raise
     out, seen = [], set()
     for f in features:
         p = f.get("properties") or {}
         key, value = p.get("osm_key"), p.get("osm_value")
         if not p.get("name") or key in SKIP_KEYS or not p.get("osm_id"):
+            continue
+        # The search box is a rectangle, which also covers bits of Johor and Riau.
+        if (p.get("countrycode") or "SG").upper() != "SG":
             continue
         street = " ".join(x for x in (p.get("housenumber"), p.get("street")) if x)
         area = p.get("district") or p.get("locality") or p.get("city")
@@ -227,41 +209,124 @@ def photon_query(text, kind):
         if dup in seen:
             continue
         seen.add(dup)
+        lon, lat = ((f.get("geometry") or {}).get("coordinates") or [None, None])[:2]
         out.append({"placeId": f"osm:{p.get('osm_type')}{p['osm_id']}", "main": p["name"],
                     "category": nice_label(value), "secondary": where,
-                    "categoryMatch": matches_kind(key, value, kind)})
-    # Keep other categories discoverable: a cafe can also be a dinner suggestion.
-    out.sort(key=lambda place: not place["categoryMatch"])
-    return out[:6]
+                    "categoryMatch": matches_kind(key, value, kind),
+                    "_key": key, "_value": value, "_lat": lat, "_lon": lon})
+    return out
 
 
-def photon_autocomplete(text, kind="other"):
-    """Places matching what's typed within Singapore, preferring the chosen type.
-    If nothing matches, retry without filler words ("pottery class" -> "pottery"),
-    then with fewer words."""
-    key = (text.casefold(), kind)
+def index_result(idx, pi, kind):
+    p = idx.places[pi]
+    return {"placeId": "osm:" + p["i"], "main": p["n"], "category": placesearch.category_text(p) or "",
+            "secondary": placesearch.where_text(p), "categoryMatch": matches_kind(p.get("k"), p.get("v"), kind)}
+
+
+def ranked_search(text, kind):
+    """Every match, best first: the local index (typo-tolerant, all branches) merged with
+    Photon (live, covers what the index doesn't). Cached for an hour."""
+    key = (placesearch.norm(text), kind)
     hit = LOOKUP_CACHE.get(key)
     if hit and time.time() - hit[0] < 3600:
         return hit[1]
-    words = text.split()
-    tries = [text]
-    core = [w for w in words if w.casefold() not in FILLER]
-    if core and core != words:
-        tries.append(" ".join(core))
-    while len(core) > 1:
-        core = core[:-1]
-        tries.append(" ".join(core))
-    out, used = [], text
-    for t in dict.fromkeys(tries):
-        out = photon_query(t, kind)
-        if out:
-            used = t
-            break
-    result = {"results": out, "approximate": bool(out) and used != text, "used": used}
+    idx = placesearch.load()
+    ranked, did_you_mean, branches, q, confident = [], None, None, None, False
+    if idx:
+        q, found = idx.search(text, kind)
+        for s, pi, how, alias, loc in found:
+            ranked.append((s, index_result(idx, pi, kind), idx.places[pi]))
+        if found:
+            s, pi, how, alias, loc = found[0]
+            p = idx.places[pi]
+            # A category search ("cafe", "bubble tea Bugis") is a real answer, not a near miss.
+            confident = s >= placesearch.CONFIDENT or how == "category"
+            # "McDonald's · 148 branches in Singapore"
+            main = idx.main_brand(found)
+            if main:
+                # "area": the location they typed, so the tip doesn't ask for one again
+                branches = {"name": main[0], "count": main[1], "area": loc[0].title() if loc else None}
+            # A confident correction ("macdonalds" -> McDonald's), never a weak guess. Suggest the
+            # chain's name rather than one oddly spelled outlet.
+            if how == "fuzzy" and s >= 0.8 and alias:
+                guess = ((main[0] if main else alias) + (" " + loc[0].title() if loc else "")).strip()
+                if placesearch.norm(guess) != placesearch.norm(text):
+                    did_you_mean = guess
+    # Photon fills gaps (blocks, buildings, places the index doesn't keep). In "auto" mode
+    # it's skipped when the index already answered well, to stay within its fair use.
+    strong = sum(1 for r in ranked if r[0] >= 0.9)
+    if PHOTON_MODE == "always" or (PHOTON_MODE == "auto" and (not idx or strong < PAGE)):
+        try:
+            extra = photon_query(text, kind)
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+            if not idx:
+                raise
+            print(f"Photon unavailable, using the local index only: {e}")
+            extra = []
+        have = {r[1]["placeId"] for r in ranked}
+        points = [(placesearch.norm(r[2]["n"]), r[2]["y"], r[2]["x"]) for r in ranked[:MAX_MERGE]]
+        for rank, r in enumerate(extra):
+            if r["placeId"] in have:
+                continue
+            n = placesearch.norm(r["main"])
+            if r["_lat"] is not None and any(n == pn and placesearch.meters(r["_lat"], r["_lon"], py, px) < 80 for pn, py, px in points):
+                continue  # same venue, already listed from the index
+            if idx:
+                s = idx.score_external(q, r["main"], r["secondary"], r["_lat"], r["_lon"], r["_key"], r["_value"], kind)
+                # Photon also matches addresses and areas, so keep its order for weak name matches.
+                s = s if s >= placesearch.KEEP else 0.6 - rank * 0.005
+            else:
+                s = 1.0 - rank * 0.01 + (0.05 if r["categoryMatch"] else 0)
+            ranked.append((s, {k: v for k, v in r.items() if not k.startswith("_")}, None))
+        ranked.sort(key=lambda r: -r[0])
+    confident = confident or bool(ranked) and ranked[0][0] >= placesearch.CONFIDENT
+    result = {"ranked": [(round(s, 3), r) for s, r, _p in ranked[:placesearch.MAX_RESULTS]],
+              "didYouMean": did_you_mean, "branches": branches, "confident": confident}
     LOOKUP_CACHE[key] = (time.time(), result)
     if len(LOOKUP_CACHE) > 3000:
         LOOKUP_CACHE.pop(next(iter(LOOKUP_CACHE)))
     return result
+
+
+MAX_MERGE = 400  # index results checked when spotting Photon duplicates
+
+
+def free_autocomplete(text, kind="other", offset=0):
+    """One page of suggestions. Same fields as before ("results", "approximate", "used")
+    plus "total", "more", "offset", "didYouMean" and "branches"."""
+    found = ranked_search(text, kind)
+    ranked = found["ranked"]
+    page = [r for _s, r in ranked[offset:offset + PAGE]]
+    return {"results": page, "approximate": bool(ranked) and not found["confident"], "used": text,
+            "total": len(ranked), "offset": offset, "more": offset + PAGE < len(ranked),
+            "didYouMean": found["didYouMean"], "branches": found["branches"]}
+
+
+def index_details(place_id):
+    """A card's details straight from the local index (no Nominatim call needed)."""
+    idx = placesearch.load()
+    m = OSM_ID.fullmatch(place_id or "")
+    pi = idx.by_id.get(m.group(1) + m.group(2)) if idx and m else None
+    if pi is None:
+        return None
+    p = idx.places[pi]
+    unit = p.get("u") or (("Level " + p["lv"]) if p.get("lv") and p["lv"].lstrip("-").isdigit() else None)
+    address = ", ".join(x for x in (unit, " ".join(x for x in (p.get("h"), p.get("s")) if x), p.get("p")) if x) or None
+    tags = {"fee": p.get("f"), "charge": p.get("ch")}
+    photo = wikidata_photos([p["wd"]]).get(p["wd"], "") if p.get("wd") else ""
+    return {
+        "source": "osm", "placeId": place_id, "name": p["n"],
+        # Branch label for the card: "Din Tai Fung (Tampines Mall)"
+        "area": p.get("m") or p.get("hn") or p.get("r") or p.get("a"), "address": address,
+        "category": placesearch.category_text(p), "kind": kind_of(p.get("k"), p.get("v")),
+        "price": price_text({k: v for k, v in tags.items() if v}),
+        "hours": osm_hours_to_week(p.get("o")), "hoursText": p.get("o"),
+        "website": p.get("w"), "phone": p.get("t"),
+        "stepFree": {"yes": True, "no": False}.get(p.get("wc")),
+        "photo": photo or None,  # only this place's own photo, never the brand's
+        "lat": p["y"], "lon": p["x"],
+        "mapsUrl": maps_url(p["n"], ", ".join(x for x in (p.get("m"), address) if x)),
+    }
 
 
 def osm_details(place_id):
@@ -292,7 +357,7 @@ def osm_details(place_id):
     out = {
         "source": "osm", "placeId": place_id, "name": name, "area": area, "address": address,
         "category": (cuisine.title() + " " + value).strip() if cuisine else value.capitalize() or None,
-        "kind": osm_kind(row.get("category"), row.get("type")),
+        "kind": kind_of(row.get("category"), row.get("type")),
         "price": price_text(e),
         "hours": osm_hours_to_week(e.get("opening_hours")), "hoursText": e.get("opening_hours"),
         "website": e.get("website") or e.get("contact:website") or e.get("url"),
@@ -1018,13 +1083,15 @@ class Handler(BaseHTTPRequestHandler):
                 if not rate_ok(ip, "ac", 120):
                     return self.send_json(429, {"error": "Too many searches — try again in a minute"})
                 kind = arg("kind") if arg("kind") in KINDS else "other"
-                return self.send_json(200, photon_autocomplete(text, kind))
+                offset = int(arg("offset")) if (arg("offset") or "").isdigit() else 0
+                return self.send_json(200, free_autocomplete(text, kind, min(offset, placesearch.MAX_RESULTS)))
             if which == "details":
                 if not OSM_ID.fullmatch(arg("id") or ""):
                     return self.send_json(400, {"error": "Unknown place"})
                 if not rate_ok(ip, "details", 30):
                     return self.send_json(429, {"error": "Too many lookups — try again in a minute"})
-                place = osm_details(arg("id"))
+                # The local index has the details already; only ask Nominatim for the rest.
+                place = index_details(arg("id")) or osm_details(arg("id"))
                 return self.send_json(200, {"place": place}) if place else self.send_json(404, {"error": "Couldn’t find that place"})
             return self.send_json(404, {"error": "No photo"})
         except (urllib.error.URLError, ValueError, TimeoutError, OSError) as e:
@@ -1105,7 +1172,11 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Bloom is running at http://localhost:{PORT}  (database: {os.path.relpath(DB_PATH, ROOT)})")
+    idx = None if GOOGLE_KEY else placesearch.load()
     print("Place search: " + ("Google Places" if GOOGLE_KEY else "free (Photon + OpenStreetMap, no key needed)"))
+    if not GOOGLE_KEY:
+        print(f"Local place index: {len(idx.places)} Singapore places (built {idx.built})" if idx
+              else "Local place index: not built yet, so search uses Photon only (run: python3 placesearch.py build)")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

@@ -12,6 +12,12 @@ let timer = null;
 let seq = 0;           // ignore slow responses for older keystrokes
 let results = [];
 let approx = false;
+let total = 0;         // all matches; shown 10 at a time
+let more = false;
+let didYouMean = '';
+let branches = null;   // { name, count } when the top match is a chain
+let loadingMore = false;
+let options = [];      // what each row in the list does, in keyboard order
 let searchError = '';
 let controller = null;
 let active = -1;
@@ -59,17 +65,18 @@ export function bindSearch() {
     ++seq; // Invalidate the previous query immediately, including the debounce interval.
     if (controller) controller.abort();
     results = []; active = -1; closeList();
-    clearTimeout(timer); timer = setTimeout(fetchSuggestions, 350);
+    clearTimeout(timer); timer = setTimeout(() => fetchSuggestions(), 350);
   });
   input.addEventListener('keydown', onKey);
   input.addEventListener('focus', () => { if (results.length) renderList(); });
   input.addEventListener('blur', () => setTimeout(closeList, 150));
   $('#gsKind').addEventListener('change', () => { if (input.value.trim().length >= 2) fetchSuggestions(); });
+  // Keep focus in the box when the list is clicked (also for "Show more").
   $('#gsList').addEventListener('mousedown', (e) => {
-    const li = e.target.closest('[data-i]');
+    const li = e.target.closest('[data-o]');
     if (!li) return;
     e.preventDefault(); // keep focus in the box
-    choose(+li.dataset.i);
+    pick(+li.dataset.o);
   });
   $('#gsCustom').addEventListener('toggle', () => {
     if ($('#gsCustom').open && !$('#customName').value) {
@@ -80,52 +87,76 @@ export function bindSearch() {
   $('#gsCustomForm').addEventListener('submit', saveCustom);
 }
 
-async function fetchSuggestions() {
+// offset 0 = a new search; otherwise the next 10 for "Show more results".
+async function fetchSuggestions(offset) {
   const q = $('#gsInput').value.trim();
-  const mine = ++seq;
+  const mine = offset ? seq : ++seq;
   $('#sgError').textContent = '';
   searchError = '';
   if (controller) controller.abort();
   controller = new AbortController();
   if (q.length < 2) { results = []; closeList(); return; }
   try {
-    const res = await fetch('/api/places/autocomplete?q=' + encodeURIComponent(q) + '&kind=' + kind() + '&session=' + encodeURIComponent(session), { signal: controller.signal });
+    const res = await fetch('/api/places/autocomplete?q=' + encodeURIComponent(q) + '&kind=' + kind() +
+      (offset ? '&offset=' + offset : '') + '&session=' + encodeURIComponent(session), { signal: controller.signal });
     const data = await res.json();
     if (mine !== seq) return;
-    results = res.ok ? data.results || [] : [];
+    const page = res.ok ? data.results || [] : [];
+    results = offset ? results.concat(page) : page;
     approx = !!data.approximate;
+    total = data.total || results.length;
+    more = !!data.more;
+    didYouMean = data.didYouMean || '';
+    branches = data.branches || null;
     if (!res.ok) searchError = data.error || 'Search isn’t available right now.';
   } catch (e) {
     if (mine !== seq || e.name === 'AbortError') return;
-    searchError = 'Search couldn’t connect. Try again, add a custom place or activity.';
-    results = []; // no server (or offline): "add as typed" and links still work
-  }
-  active = -1;
+    if (!offset) {
+      searchError = 'Search couldn’t connect. Try again, add a custom place or activity.';
+      results = []; more = false; didYouMean = ''; branches = null; // offline: "add as typed" still works
+    }
+  } finally { loadingMore = false; }
+  if (!offset) active = -1;
   renderList();
+  if (offset) announce('Showing ' + results.length + ' of ' + total + ' places.');
 }
 
 function renderList() {
   const list = $('#gsList'), input = $('#gsInput');
   const q = input.value.trim();
   if (q.length < 2) return closeList();
-  const head = searchError
-    ? '<li class="gs-note" role="presentation">' + esc(searchError) + '</li>'
+  // Every row people can pick, in keyboard order.
+  options = [];
+  if (didYouMean && !searchError) options.push({ type: 'dym' });
+  results.forEach((r, i) => options.push({ type: 'result', i: i }));
+  if (more && !searchError) options.push({ type: 'more' });
+  options.push({ type: 'typed' });
+  const note = (t) => '<li class="gs-note" role="presentation">' + t + '</li>';
+  const head = searchError ? note(esc(searchError))
     : !results.length
-    ? '<li class="gs-note" role="presentation">No matches in our Singapore map search for “' + esc(q) + '”. Some places aren’t listed. Try the name and area, add it as a custom place or activity.</li>'
-    : approx ? '<li class="gs-note" role="presentation">No exact match — closest places:</li>' : '';
-  const items = results.map((r, i) =>
-    '<li role="option" id="gs-' + i + '" data-i="' + i + '" aria-selected="' + (i === active) + '">' +
-      '<span class="gs-icon" aria-hidden="true">📍</span>' +
-      '<span><strong>' + esc(r.main || '') + '</strong>' +
-      '<small>' + esc([r.category, r.secondary].filter(Boolean).join(' · ')) + '</small></span></li>');
-  items.push('<li role="option" id="gs-typed" data-i="-1" class="gs-typed" aria-selected="' + (active === results.length) + '">' +
-    '<span class="gs-icon" aria-hidden="true">✏️</span>' +
-    '<span><strong>Add “' + esc(q) + '” as a custom idea</strong><small>' + esc((KINDS[kind()] || KINDS.other).label) + ' · enter venue, address and details</small></span></li>');
+    ? note('No matches for “' + esc(q) + '” in Singapore. Check the spelling, try just the name (e.g. “Din Tai Fung”) or the name and area (“Din Tai Fung Tampines”), or add it as a custom place or activity.')
+    : approx ? note('No exact match — closest places:')
+    : branches && branches.count > 1 ? note(esc(branches.name) + ' · ' + branches.count + ' branches in Singapore. ' +
+        (branches.area ? 'Closest to ' + esc(branches.area) + ' first.' : 'Add an area (e.g. “' + esc(branches.name) + ' Tampines”) to narrow it down.'))
+    : '';
+  const row = (o, n, icon, title, sub, cls) =>
+    '<li role="option" id="gs-o' + n + '" data-o="' + n + '"' + (cls ? ' class="' + cls + '"' : '') + ' aria-selected="' + (n === active) + '">' +
+      '<span class="gs-icon" aria-hidden="true">' + icon + '</span><span><strong>' + title + '</strong>' + (sub ? '<small>' + sub + '</small>' : '') + '</span></li>';
+  const items = options.map((o, n) => {
+    if (o.type === 'dym') return row(o, n, '💡', 'Did you mean “' + esc(didYouMean) + '”?', 'Search for this instead', 'gs-dym');
+    if (o.type === 'more') return row(o, n, '⋯', loadingMore ? 'Loading…' : 'Show more results', 'Showing ' + results.length + ' of ' + total, 'gs-more');
+    if (o.type === 'typed') return row(o, n, '✏️', 'Add “' + esc(q) + '” as a custom idea', esc((KINDS[kind()] || KINDS.other).label) + ' · enter venue, address and details', 'gs-typed');
+    const r = results[o.i];
+    return row(o, n, '📍', esc(r.main || ''), esc([r.category, r.secondary].filter(Boolean).join(' · ')));
+  });
   list.innerHTML = head + items.join('');
   list.hidden = false;
   input.setAttribute('aria-expanded', 'true');
-  const id = active < 0 ? '' : active === results.length ? 'gs-typed' : 'gs-' + active;
-  if (id) input.setAttribute('aria-activedescendant', id); else input.removeAttribute('aria-activedescendant');
+  if (active >= 0 && active < options.length) {
+    input.setAttribute('aria-activedescendant', 'gs-o' + active);
+    const el = $('#gs-o' + active);
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  } else input.removeAttribute('aria-activedescendant');
 }
 
 function closeList() {
@@ -135,14 +166,34 @@ function closeList() {
 }
 
 function onKey(e) {
-  const n = results.length + 1; // + "add as typed"
+  const n = options.length;
+  if (!n && e.key !== 'Enter') return;
   if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % n; renderList(); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + n) % n; renderList(); }
   else if (e.key === 'Escape') closeList();
   else if (e.key === 'Enter') {
     e.preventDefault();
-    if (active >= 0) choose(active === results.length ? -1 : active);
+    if (active >= 0) pick(active);
     else if (results.length) choose(0);
+  }
+}
+
+// A row was picked: a place, the spelling suggestion, "Show more" or "add as typed".
+function pick(n) {
+  const o = options[n];
+  if (!o) return;
+  if (o.type === 'result') return choose(o.i);
+  if (o.type === 'typed') return choose(-1);
+  if (o.type === 'dym') {
+    $('#gsInput').value = didYouMean;
+    announce('Searching for ' + didYouMean);
+    active = -1;
+    return fetchSuggestions();
+  }
+  if (o.type === 'more' && !loadingMore) {
+    loadingMore = true;
+    renderList();
+    fetchSuggestions(results.length);
   }
 }
 

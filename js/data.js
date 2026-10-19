@@ -21,6 +21,7 @@ export const KINDS = {
   food: { label: 'Food', emoji: '🍽️', hue: '#FFC48A' },
   drinks: { label: 'Drinks', emoji: '🧋', hue: '#FFB0D2' },
   activity: { label: 'Activity', emoji: '🎯', hue: '#A9C4FF' },
+  shopping: { label: 'Shopping', emoji: '🛍️', hue: '#A8E6B4' },
   other: { label: 'Something else', emoji: '✨', hue: '#D2B8FF' },
 };
 export function customPlace(c) {
@@ -31,8 +32,12 @@ export function customPlace(c) {
   const ln = !!(d && d.source === 'link'); // added from a pasted link
   const suffix = d && d.area ? ' (' + d.area + ')' : '';
   const activityName = suffix && c.name.endsWith(suffix) ? c.name.slice(0, -suffix.length) : c.name;
+  const dist = g ? '' : (d && d.area) || '';
   return { id: c.id, q: c.name, name: c.name, kind: (d && d.category) || k.label, emoji: k.emoji, hue: k.hue,
-    price: (d && d.price) || '', dist: g ? '' : (d && d.area) || '',
+    // Shown on cards: drop the " (area)" we appended when the area already shows
+    // underneath. Only that exact suffix goes, so brackets in real names stay.
+    title: dist ? activityName : c.name,
+    price: (d && d.price) || '', dist: dist,
     // Only a photo of this exact place (from Google, or the free map's own photo);
     // otherwise the card shows a map pinned on where it is.
     photo: (!g && d && d.photo) || '',
@@ -57,6 +62,8 @@ export function todaysHours(lines) {
   if (!lines || lines.length !== 7) return '';
   return (lines[(new Date().getDay() + 6) % 7] || '').replace(/^[^:]+:\s*/, '');
 }
+// The name to show for a place (stored names may end in " (area)").
+export function placeTitle(pl) { return pl.title || pl.name; }
 // Everything in the deck: built-in ideas first, then the group's own suggestions.
 // Demo mode starts with sample ideas. Real groups start empty and build the
 // deck from their own suggestions, so nothing made-up reaches real friends.

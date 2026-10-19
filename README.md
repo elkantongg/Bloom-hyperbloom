@@ -57,7 +57,45 @@ No user accounts are needed. Passwords are stored hashed (PBKDF2), each person g
 ## APIs
 - **[Open-Meteo](https://open-meteo.com/)** weather forecast API (free, no key, no sign-in). The plan card shows the forecast for the chosen time, and outdoor places warn you when rain is likely. Weather data by Open-Meteo.com (CC BY 4.0).
 
-## Place search (Google Maps-style, optional)
+## Place search (free, OpenStreetMap)
+"Got another idea?" searches Singapore venues without any paid API:
+
+- **Local place index** (`placesearch.py`, data in `search/sg-places.json.gz`): about every named
+  restaurant, café, shop, mall and activity in Singapore, downloaded once from the
+  [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) inside Singapore's real
+  boundary. It's searched in memory, so it's instant and makes no network calls per keystroke.
+  - Typos, punctuation and spacing don't matter: *Macdonalds*, *mac donalds*, *MCDONALDS* → McDonald's (with "Did you mean…?").
+  - Every branch is listed with its mall, unit, street or area ("McDonald's — 118 branches in Singapore").
+  - Locations rank first: *McDonalds Tampines*, *Sephora Orchard*, *Din Tai Fung at Paragon*.
+  - Category words work: *bubble tea Bugis*, *pottery workshop*, *ramen*, *escape room*.
+  - Shows 10 at a time with **Show more results**. Card details (hours, website, phone) come from the index too.
+- **[Photon](https://photon.komoot.io/)** (live OpenStreetMap search) fills gaps the index doesn't keep,
+  such as buildings and blocks. To respect its fair-use policy it's only called when the index
+  doesn't already have a strong answer, and it backs off automatically when busy.
+  Set `BLOOM_PHOTON_MODE=always` or `off` to change this.
+- **[Nominatim](https://nominatim.org/)** is only used for details of Photon-only results (max 1 request/second).
+
+Map data © OpenStreetMap contributors, available under the [ODbL](https://www.openstreetmap.org/copyright).
+
+### Refresh the place index
+Run this every few weeks (it takes a few minutes and makes 3 Overpass requests):
+```
+python3 placesearch.py build
+```
+If the main Overpass server is busy it tries mirrors with backoff. To choose servers, set
+`BLOOM_OVERPASS=https://url1/api/interpreter,https://url2/api/interpreter`. A running server
+picks up the new file automatically. Without the file, search falls back to Photon only.
+
+Try it in the terminal: `python3 placesearch.py search "macdonalds tampines"`
+
+Optional speed-up: `pip install -r requirements.txt` installs RapidFuzz (results are the same without it).
+
+### Tests
+```
+python3 -m unittest discover tests
+```
+
+## Place search with Google (optional, paid)
 With a Google Places API key, "Got another idea?" works like a mini Google Maps:
 suggestions as you type (with typo correction), the exact place's real photo,
 rating, price tier, today's hours, and an "Open in Google Maps" link.
@@ -79,6 +117,9 @@ rate-limited per person. Without a key, Bloom uses OpenStreetMap search instead.
 index.html        page shell (header, nav, accessibility menu)
 styles.css        all styling, light/dark themes
 server.py         Python server: serves the site + JSON API, SQLite database
+placesearch.py    Singapore place index: build from OpenStreetMap + typo-tolerant search
+search/           the built index (sg-places.json.gz)
+tests/            place search tests (python3 -m unittest discover tests)
 js/
   main.js         entry point: starts everything in order
   state.js        the shared app state (+ demo friends)
@@ -91,7 +132,7 @@ js/
   derive.js       best times, place rankings, bloom score
   ui.js           toasts, avatars, flower, side panel, milestones
   settings.js     accessibility options, page size, theme, home nav
-  search.js       place search (type + autocomplete) and add-by-link
+  search.js       place search: type, autocomplete, did-you-mean, show more, custom places
   edit.js         edit a suggested idea (name, type, price, hours, notes, link)
   weather.js      forecast (Open-Meteo)
   data.js         built-in places + group suggestions
