@@ -83,6 +83,75 @@ export function chosenRun() {
   return runs.find((r) => r.id === state.pickRun) || runs[0] || null;
 }
 export function chosenPlace() {
+  return planStops(chosenRun())[0] || rankPlaces()[0];
+}
+
+// ---------- Multi-stop plans ----------
+// The longer everyone is free, the more the plan can fit: one meal or activity for a
+// short slot, back-to-back stops (eat, then cycle, then drinks) for a long one.
+export const maxStops = (hours) => (hours < 2 ? 1 : hours < 4 ? 2 : hours < 6 ? 3 : 4);
+const WEIGHT = { food: 1.5, drinks: 1.25, activity: 2, shopping: 1.5, other: 1.5 }; // rough hours each
+
+// Places the group is keen on: someone loved it or said maybe, and more yes than no.
+export function likedPlaces() {
+  return rankPlaces().filter((p) => p.points > 0 && p.yes.length + p.maybe.length > p.no.length);
+}
+
+// The plan's stops for a time slot, in visiting order, each with its own start and end.
+export function planStops(run) {
+  if (!run) return [];
+  const hours = run.end - run.start;
+  const max = maxStops(hours);
   const ranked = rankPlaces();
-  return ranked.find((p) => p.id === state.pickPlace) || ranked[0];
+  const byId = (id) => ranked.find((p) => p.id === id);
+  let picks;
+  if (state.pickStops) {
+    picks = state.pickStops.map(byId).filter(Boolean).slice(0, max);
+  } else {
+    // Bloom's pick: the favourite first, then the next favourites of other types
+    // (a meal, an activity, drinks...), then any other favourites if there's still time.
+    const liked = likedPlaces();
+    const pool = liked.length ? liked : ranked.slice(0, 1);
+    picks = [];
+    pool.forEach((p) => { if (picks.length < max && !picks.some((q) => q.type === p.type)) picks.push(p); });
+    pool.forEach((p) => { if (picks.length < max && picks.indexOf(p) === -1) picks.push(p); });
+  }
+  if (!picks.length) return [];
+  // Visiting order: drinks wind things down at the end, and a meal goes wherever it lands
+  // closest to lunch (12pm) or dinner (6pm); everything else keeps the group's order.
+  const food = picks.filter((p) => p.type === 'food');
+  const rest = picks.filter((p) => p.type !== 'food' && p.type !== 'drinks');
+  const drinks = picks.filter((p) => p.type === 'drinks');
+  let ordered = rest.concat(food, drinks);
+  if (food.length) {
+    let best = null;
+    for (let i = 0; i <= rest.length; i++) {
+      const tryOrder = rest.slice(0, i).concat(food, rest.slice(i), drinks);
+      const at = timed(tryOrder, run)[i].start;
+      const miss = Math.min(Math.abs(at - 12), Math.abs(at - 18));
+      if (!best || miss < best.miss) best = { miss: miss, order: tryOrder };
+    }
+    ordered = best.order;
+  }
+  return timed(ordered, run);
+}
+
+// Back-to-back times for stops in a slot, shared by how long each kind of stop usually
+// takes (in half hours). A stop never stretches past 1.5x its usual length, so a few
+// stops on a long free day finish early instead of a 3-hour lunch.
+function timed(ordered, run) {
+  const hours = run.end - run.start;
+  const w = ordered.map((p) => WEIGHT[p.type] || 1.5);
+  const sum = w.reduce((a, b) => a + b, 0);
+  const scale = Math.min(hours / sum, 1.5);
+  let prev = run.start;
+  return ordered.map((p, i) => {
+    const left = ordered.length - 1 - i; // stops still to fit after this one
+    let end = prev + Math.max(0.5, Math.round(w[i] * scale * 2) / 2);
+    if (scale === hours / sum && !left) end = run.end; // a full slot ends exactly on time
+    end = Math.min(end, run.end - 0.5 * left);
+    const stop = Object.assign({}, p, { start: prev, end: end });
+    prev = end;
+    return stop;
+  });
 }

@@ -984,3 +984,11 @@ kbd {
 .wx-head { font-size: 12px; font-weight: 600; color: var(--muted); }
 .wx-line { margin-top: 2px !important; font-size: 15px; font-weight: 700; }
 .wx-tip { margin-top: 2px !important; font-size: 13px; color: var(--muted); }
+
+/* Multi-stop plan: back-to-back stops when the group is free for longer */
+.stops { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 12px; counter-reset: stop; }
+.stops li { display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: start; position: relative; }
+.stops .stop-time { font-size: 13px; font-weight: 700; color: var(--accent); padding-top: 3px; white-space: nowrap; }
+.stops .v { font-size: 16px; }
+.stops li + li::before { content: ""; position: absolute; left: 44px; top: -12px; height: 10px; border-left: 2px dotted var(--line); }
+@media (max-width: 480px) { .stops li { grid-template-columns: 1fr; gap: 2px; } .stops li + li::before { display: none; } }

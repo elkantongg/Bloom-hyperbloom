@@ -8,12 +8,12 @@ export const commonsImage = (file, width) => 'https://commons.wikimedia.org/wiki
 export const commonsPage = (file) => 'https://commons.wikimedia.org/wiki/File:' + encodeURIComponent(file.replace(/ /g, '_'));
 
 export const PLACES = [
-  { id: 'noodle', name: 'Lantern Noodle Bar', kind: 'Dinner', emoji: '🍜', price: '$$', dist: '1.2 km', blurb: 'Hand-pulled noodles and big shared tables.', tags: ['Step-free', 'Veg options'], hue: '#FFC48A', photo: 'Shoyu ramen, at Kasukabe Station (2014.05.05) 1.jpg' },
-  { id: 'bowling', name: 'Strike Social', kind: 'Bowling', emoji: '🎳', price: '$$', dist: '3.4 km', blurb: 'Retro lanes, arcade machines and milkshakes.', tags: ['Step-free', 'Groups of 6+'], hue: '#A9C4FF', photo: 'Bowlerbowling.JPG' },
-  { id: 'picnic', name: 'Botanic Gardens Picnic', kind: 'Outdoors', emoji: '🧺', price: 'Free', dist: '2.0 km', blurb: 'Bring snacks, find a shady lawn, stay till sunset.', tags: ['Free', 'Weather-dependent'], hue: '#A8E6B4', outdoor: true, photo: 'Picnic in Kincardine, Ontario.jpg' },
-  { id: 'escape', name: 'Clockwork Escape Room', kind: 'Activity', emoji: '🔐', price: '$$$', dist: '4.1 km', blurb: '60 minutes to escape a locked inventor’s study.', tags: ['Max 6 people', 'Book ahead'], hue: '#D2B8FF', photo: 'Padlock klódka ubt.JPG' },
-  { id: 'karaoke', name: 'Echo Box Karaoke', kind: 'Karaoke', emoji: '🎤', price: '$$', dist: '2.7 km', blurb: 'Private rooms, 5,000+ songs, zero judgement.', tags: ['Private room', 'Open late'], hue: '#FFB0D2', photo: 'Karaoke in Nha Trang.jpg' },
-  { id: 'cafe', name: 'Paper Crane Board Game Café', kind: 'Café', emoji: '🎲', price: '$', dist: '0.8 km', blurb: '300 board games, waffles and quiet corners.', tags: ['Quiet', 'Step-free'], hue: '#FFE08A', photo: 'Playing-risk.jpg' },
+  { id: 'noodle', name: 'Lantern Noodle Bar', kind: 'Noodles', type: 'food', emoji: '🍜', price: '$$', dist: '1.2 km', blurb: 'Hand-pulled noodles and big shared tables.', tags: ['Step-free', 'Veg options'], hue: '#FFC48A', photo: 'Shoyu ramen, at Kasukabe Station (2014.05.05) 1.jpg' },
+  { id: 'bowling', name: 'Strike Social', kind: 'Bowling', type: 'activity', emoji: '🎳', price: '$$', dist: '3.4 km', blurb: 'Retro lanes, arcade machines and milkshakes.', tags: ['Step-free', 'Groups of 6+'], hue: '#A9C4FF', photo: 'Bowlerbowling.JPG' },
+  { id: 'picnic', name: 'Botanic Gardens Picnic', kind: 'Outdoors', type: 'activity', emoji: '🧺', price: 'Free', dist: '2.0 km', blurb: 'Bring snacks, find a shady lawn, stay till sunset.', tags: ['Free', 'Weather-dependent'], hue: '#A8E6B4', outdoor: true, photo: 'Picnic in Kincardine, Ontario.jpg' },
+  { id: 'escape', name: 'Clockwork Escape Room', kind: 'Activity', type: 'activity', emoji: '🔐', price: '$$$', dist: '4.1 km', blurb: '60 minutes to escape a locked inventor’s study.', tags: ['Max 6 people', 'Book ahead'], hue: '#D2B8FF', photo: 'Padlock klódka ubt.JPG' },
+  { id: 'karaoke', name: 'Echo Box Karaoke', kind: 'Karaoke', type: 'activity', emoji: '🎤', price: '$$', dist: '2.7 km', blurb: 'Private rooms, 5,000+ songs, zero judgement.', tags: ['Private room', 'Open late'], hue: '#FFB0D2', photo: 'Karaoke in Nha Trang.jpg' },
+  { id: 'cafe', name: 'Paper Crane Board Game Café', kind: 'Café', type: 'drinks', emoji: '🎲', price: '$', dist: '0.8 km', blurb: '300 board games, waffles and quiet corners.', tags: ['Quiet', 'Step-free'], hue: '#FFE08A', photo: 'Playing-risk.jpg' },
 ];
 
 // Types for places the group suggests themselves.
@@ -33,7 +33,8 @@ export function customPlace(c) {
   const suffix = d && d.area ? ' (' + d.area + ')' : '';
   const activityName = suffix && c.name.endsWith(suffix) ? c.name.slice(0, -suffix.length) : c.name;
   const dist = g ? '' : (d && d.area) || '';
-  return { id: c.id, q: c.name, name: c.name, kind: (d && d.category) || k.label, emoji: k.emoji, hue: k.hue,
+  const type = KINDS[c.kind === 'outdoors' ? 'activity' : c.kind] ? (c.kind === 'outdoors' ? 'activity' : c.kind) : 'other';
+  return { id: c.id, q: c.name, name: c.name, kind: (d && d.category) || k.label, type: type, emoji: k.emoji, hue: k.hue,
     // Shown on cards: drop the " (area)" we appended when the area already shows
     // underneath. Only that exact suffix goes, so brackets in real names stay.
     title: dist ? activityName : c.name,

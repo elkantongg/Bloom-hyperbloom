@@ -48,6 +48,7 @@ Bloom simplifies group planning into three steps.
 
 - See your group's planning progress represented by a blooming flower.
 - Receive a suggested plan based on availability and preferences.
+- The plan grows with your free time: under 2 hours gets one place; longer gets back-to-back stops (up to 2 for 2–4 hours, 3 for 4–6 hours, 4 for a full day), e.g. bowling → lunch → picnic → café. Meals land near lunch or dinner time, drinks come last, and you can swap stops under **Change the time or stops**.
 - View the confirmed date, time, venue, and participants.
 - Check the weather forecast for your outing.
 - Export the plan to your calendar.

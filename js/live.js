@@ -47,7 +47,7 @@ export function startLive(res) {
   state.friends = [];
   state.custom = [];
   state.me = { id: res.memberId, name: 'You', color: '#2F6FEB', avail: new Set(), votes: {}, joined: true };
-  state.pickRun = state.pickPlace = null;
+  state.pickRun = state.pickStops = null;
   state.milestones = {};
   applyState(res.state, true);
   saveSession(res.groupId, Object.assign({}, state.session, { title: state.group.title }));
@@ -67,7 +67,7 @@ export function startDemo(title, name) {
   state.custom = [];
   state.milestones = {};
   state.coachDone = { grid: false, deck: false };
-  state.pickRun = state.pickPlace = null;
+  state.pickRun = state.pickStops = null;
 }
 
 // Merge the server's copy of the group into local state.

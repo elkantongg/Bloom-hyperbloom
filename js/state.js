@@ -23,7 +23,7 @@ export const state = {
   milestones: {},
   coachDone: { grid: false, deck: false },
   pickRun: null,
-  pickPlace: null,
+  pickStops: null,     // the plan's places, in order; null = Bloom picks them
 };
 export const people = () => [state.me].concat(state.friends);
 export const total = () => people().length;
