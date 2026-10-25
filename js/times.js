@@ -4,7 +4,7 @@ import { dayLong, DAYS, dayShort, fmtHour, fmtRange, fmtWeek, HOURS, isPast, key
 import { people, state, total } from './state.js';
 import { computeRuns, freeAt, timeKey, timeVotes } from './derive.js';
 import { currentVotes } from './data.js';
-import { announce, avatarStack, buzz, copy, namesList, refresh, sidebarHTML, toast } from './ui.js';
+import { announce, avatarStack, buzz, copy, headCouchHTML, namesList, refresh, sidebarHTML, toast } from './ui.js';
 import { go, later } from './router.js';
 import { prefs } from './settings.js';
 import { invite, inviteLink, saveSoon } from './live.js';
@@ -61,7 +61,7 @@ export function timesHTML() {
   const grid = '<div class="grid" id="grid" role="grid" aria-label="Your availability, ' + fmtWeek(w) + '" aria-describedby="gridHelp" style="--cols:7">' +
     gridRowsHTML(w) + '</div>';
 
-  return '<div class="page-top"><div class="page-head"><h1>When are you free?</h1>' +
+  return '<div class="page-top"><div class="page-head"><div class="title-row"><h1>When are you free?</h1>' + headCouchHTML() + '</div>' +
       (weekOver() ? '<p class="week-over" role="status">⏰ This plan’s dates are over. <a href="#/" class="link-btn">Start a new plan</a> to pick new dates.</p>' : '') +
       '<p id="gridHelp" class="one-line">Drag across the hours that work for you. The brighter a square, the more friends are free. ' +
       '<span class="sr-only">Keyboard: arrow keys move, Space or Enter toggles an hour, Shift plus an arrow paints as you move.</span></p></div>' +

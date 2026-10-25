@@ -3,7 +3,7 @@ import { $, $$, esc, reduceMotion } from './util.js';
 import { allPlaces, commonsImage, commonsPage, currentVotes, FRIEND_VOTES, googleLink, KINDS, placeTitle, PLACES, votedCount } from './data.js';
 import { people, state, total } from './state.js';
 import { isHost, rankPlaces } from './derive.js';
-import { announce, avatarStack, buzz, namesList, refresh, sidebarHTML, toast } from './ui.js';
+import { announce, avatarStack, buzz, headCouchHTML, namesList, refresh, sidebarHTML, toast } from './ui.js';
 import { go, later } from './router.js';
 import { simulateTimes } from './times.js';
 import { bindSearch, searchHTML } from './search.js';
@@ -12,7 +12,7 @@ import { api, applyState, saveSoon } from './live.js';
 import { renderWeatherPanel, updateWeatherEls, weatherPanelHTML } from './weather.js';
 
 export function placesHTML() {
-  return '<div class="page-top"><div class="page-head"><h1>Where should we go?</h1>' +
+  return '<div class="page-top"><div class="page-head"><div class="title-row"><h1>Where should we go?</h1>' + headCouchHTML() + '</div>' +
       '<p></p></div></div>' +
     '<div class="layout"><section>' +
     '<div class="places-layout">' +

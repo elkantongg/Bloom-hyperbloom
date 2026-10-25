@@ -94,20 +94,45 @@ export function updateCouch() {
       if (!s) return;
       // On the final plan, everyone who's coming is fully seated; anyone who can't leaves an empty seat.
       const going = svg.dataset.party === '1' && lockedRun() ? lockedRun().who.indexOf(p) !== -1 : null;
-      s.style.setProperty('--s', going !== null ? (going ? '1' : '0') : p.joined ? (0.35 + personProgress(p) * 0.65).toFixed(3) : '0');
+      // Everyone who's joined sits at full size (so the row lines up); not-done-yet is shown
+      // by fading, not shrinking. Not joined yet = empty seat.
+      s.style.setProperty('--s', going !== null ? (going ? '1' : '0') : p.joined ? '1' : '0');
+      s.style.opacity = going !== null ? '' : (0.45 + personProgress(p) * 0.55).toFixed(2);
+      // The dashed outline only marks an empty seat.
+      const seated = going !== null ? going : p.joined;
+      const empty = s.parentNode.querySelector('.seat-empty');
+      if (empty) empty.style.opacity = seated ? '0' : '';
     });
     svg.setAttribute('aria-label', couchLabel());
   });
   $$('[data-bloom-score]').forEach((el) => { el.textContent = score ? score + '%' : '👋'; });
+  // Fill the ring (after a frame, so it sweeps round from where it was).
+  requestAnimationFrame(() => $$('.ready-ring').forEach((ring) => {
+    ring.querySelector('.rr-fill').style.strokeDashoffset = (100 - score) + 'px'; // CSS needs the unit
+    ring.setAttribute('aria-label', score + '% ready');
+  }));
   $$('[data-bloom-label]').forEach((el) => { el.textContent = score ? 'ready' : 'just started'; });
 }
+
+// How ready the plan is (everyone's hours and votes), as a ring that fills up.
+export function ringHTML() {
+  return '<div class="ready-ring" role="img" aria-label="Plan progress">' +
+    '<svg viewBox="0 0 100 100" aria-hidden="true">' +
+      '<defs><linearGradient id="rrGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#FFC53D"/></linearGradient></defs>' +
+      '<circle class="rr-track" cx="50" cy="50" r="42"/>' +
+      '<circle class="rr-fill" cx="50" cy="50" r="42" pathLength="100"/>' +
+    '</svg>' +
+    '<div class="rr-text"><strong data-bloom-score>👋</strong><span data-bloom-label>just started</span></div>' +
+  '</div>';
+}
+// The couch beside the page title: friends take a seat as they add hours and vote.
+export const headCouchHTML = () => '<span class="head-couch">' + couchSVG() + '</span>';
 
 export function sidebarHTML() {
   return '<aside class="side" aria-label="Your group">' +
     '<div class="panel group">' +
-      '<div class="couch-wrap">' + couchSVG() + '</div>' +
+      ringHTML() +
       '<div>' +
-        '<div class="bloom-meter"><strong data-bloom-score>👋</strong><span data-bloom-label>just started</span></div>' +
         '<h2 class="sr-only">Who’s in</h2>' +
         '<ul class="people" id="people"></ul>' +
       '</div>' +
