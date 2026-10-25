@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bloom — plans that actually happen</title>
+  <title>Lepak — plans that actually happen</title>
   <meta name="description" content="Because “soon” isn't a date">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,14 +15,24 @@
   <a class="skip" href="#main">Skip to content</a>
 
   <header class="topbar">
-    <a class="brand" href="#/" aria-label="Bloom home">
-      <img src="icon.svg" width="32" height="32" alt="">
-      <span>Bloom</span>
+    <a class="brand" href="#/" aria-label="Lepak home">
+      <svg class="brand-mark" width="32" height="32" viewBox="0 0 64 64" aria-hidden="true">
+        <defs><linearGradient id="bm-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#E8460C"/></linearGradient></defs>
+        <rect width="64" height="64" rx="16" fill="url(#bm-bg)"/>
+        <g class="bm-couch" fill="#fff">
+          <rect x="16" y="18" width="32" height="16" rx="6"/>
+          <rect x="9" y="27" width="12" height="17" rx="5"/><rect x="43" y="27" width="12" height="17" rx="5"/>
+          <rect x="18" y="33" width="28" height="11" rx="3"/>
+          <rect x="13" y="43" width="4" height="6" rx="1.5"/><rect x="47" y="43" width="4" height="6" rx="1.5"/>
+          <path d="M20 33.5h24" stroke="#F06A26" stroke-width="2" stroke-linecap="round"/>
+        </g>
+      </svg>
+      <span>Lepak</span>
     </a>
 
     <nav class="home-nav" aria-label="Main">
       <ul>
-        <li><button type="button" class="nav-link" data-scroll="versus">Why Bloom</button></li>
+        <li><button type="button" class="nav-link" data-scroll="versus">Why Lepak</button></li>
         <li><button type="button" class="nav-link" data-scroll="how">How it works</button></li>
         <li><button type="button" class="nav-link" data-scroll="myGroupsTitle" id="navGroups" hidden>Your groups</button></li>
         <li><button type="button" class="nav-link" id="navDemo">Try the demo</button></li>
@@ -34,7 +44,7 @@
       <ol class="stepper" id="stepper">
         <li><button type="button" data-step="times"><span class="num">1</span><span class="lbl">When</span></button></li>
         <li><button type="button" data-step="places"><span class="num">2</span><span class="lbl">Where</span></button></li>
-        <li><button type="button" data-step="bloom"><span class="num">3</span><span class="lbl">Bloom</span></button></li>
+        <li><button type="button" data-step="bloom"><span class="num">3</span><span class="lbl">Lepak</span></button></li>
       </ol>
     </nav>
 
@@ -50,7 +60,7 @@
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="4.5" r="2" fill="currentColor"/><path d="M4 8.5l8 1.5 8-1.5M12 10v5m0 0l-3.5 6M12 15l3.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <div class="a11y-panel" id="a11yPanel" role="group" aria-labelledby="a11yTitle" hidden>
-        <h2 id="a11yTitle">Make Bloom work for you</h2>
+        <h2 id="a11yTitle">Make Lepak work for you</h2>
         <p class="pref-note">Tip: use <strong>− 100% +</strong> in the top bar to make everything bigger or smaller.</p>
         <label class="pref"><input type="checkbox" data-pref="counts"><span><strong>Numbers on the grid</strong><small>See how many are free without relying on colour</small></span></label>
         <label class="pref"><input type="checkbox" data-pref="calm"><span><strong>Calm mode</strong><small>Turn off animations and confetti</small></span></label>

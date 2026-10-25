@@ -1,8 +1,8 @@
-"""Bloom's local place index: typo-tolerant, branch-aware search of Singapore venues.
+"""Lepak's local place index: typo-tolerant, branch-aware search of Singapore venues.
 
 Why this exists: Photon (the free geocoder) returns only a few results, ranked by
 importance, and needs near-exact spelling. "Macdonalds" finds one McDonald's although
-OpenStreetMap maps well over a hundred in Singapore. So Bloom keeps a compact copy of
+OpenStreetMap maps well over a hundred in Singapore. So Lepak keeps a compact copy of
 Singapore's named venues, downloaded once from the Overpass API (inside Singapore's
 real boundary, not a bounding box), and searches it in memory:
 
@@ -50,7 +50,7 @@ except ImportError:  # pragma: no cover - depends on the machine
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.environ.get("BLOOM_INDEX", os.path.join(ROOT, "search", "sg-places.json.gz"))
-UA = "Bloom-hackathon-prototype/1.0 (https://github.com/elkantongg/hyperbloom)"
+UA = "Lepak-hackathon-prototype/1.0 (https://github.com/elkantongg/hyperbloom)"
 OVERPASS = [u for u in os.environ.get("BLOOM_OVERPASS", "").split(",") if u] or [
     "https://overpass-api.de/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",

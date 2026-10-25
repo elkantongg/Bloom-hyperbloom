@@ -1,8 +1,7 @@
 // Which screen is showing, navigation, and batched re-renders.
 import { $, $$ } from './util.js';
-import { allPlaces } from './data.js';
 import { state } from './state.js';
-import { updateFlowers, updatePeople } from './ui.js';
+import { updateCouch, updatePeople } from './ui.js';
 import { bindHome, homeHTML } from './home.js';
 import { bindTimes, timesHTML } from './times.js';
 import { bindPlaces, placesHTML } from './places.js';
@@ -12,8 +11,9 @@ import { bindJoin, joinHTML, openInvite, sessions } from './live.js';
 export function canGo(step) {
   if (step === 'home' || step === 'join') return true;
   if (step === 'times') return state.mode === 'demo' || !!state.session;
+  // Nobody waits on anybody: once your hours are in you can move on. A locked plan is open to all.
   if (step === 'places') return state.me.avail.size > 0;
-  if (step === 'bloom') return allPlaces().length > 0 && state.deckIndex >= allPlaces().length;
+  if (step === 'bloom') return !!state.plan || state.me.avail.size > 0;
   return false;
 }
 export function go(step, push) {
@@ -62,11 +62,11 @@ export function render() {
   if (state.step === 'places') main.innerHTML = placesHTML();
   if (state.step === 'bloom') main.innerHTML = bloomHTML();
   document.title = {
-    home: 'Bloom — plans that actually happen',
-    join: 'You’re invited · Bloom',
-    times: 'When are you free? · Bloom',
-    places: 'Where should we go? · Bloom',
-    bloom: 'Your plan · Bloom',
+    home: 'Lepak — plans that actually happen',
+    join: 'You’re invited · Lepak',
+    times: 'When are you free? · Lepak',
+    places: 'Where should we go? · Lepak',
+    bloom: 'Your plan · Lepak',
   }[state.step];
   if (state.step === 'home') bindHome();
   $('#navGroups').hidden = !(state.step === 'home' && Object.keys(sessions()).length);
@@ -76,7 +76,7 @@ export function render() {
   if (state.step === 'bloom') bindBloom();
   updateStepper();
   updatePeople();
-  updateFlowers();
+  updateCouch();
   window.scrollTo(0, 0);
   const h1 = $('#main h1');
   if (h1 && state.step !== 'home') { h1.setAttribute('tabindex', '-1'); h1.focus({ preventScroll: true }); }

@@ -3,7 +3,8 @@ import { $, esc, store } from './util.js';
 import { setWeek } from './dates.js';
 import { allPlaces } from './data.js';
 import { FRIENDS, people, state } from './state.js';
-import { announce, refresh, toast } from './ui.js';
+import { announce, namesList, refresh, toast } from './ui.js';
+import { resumeStep } from './derive.js';
 import { clearTimers, go, render } from './router.js';
 
 export async function api(method, path, body) {
@@ -13,13 +14,13 @@ export async function api(method, path, body) {
   try {
     res = await fetch('/api' + path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined });
   } catch (e) {
-    throw Object.assign(new Error('Can’t reach the Bloom server. Is it running? (npm start)'), { status: 0 });
+    throw Object.assign(new Error('Can’t reach the Lepak server. Is it running? (npm start)'), { status: 0 });
   }
   let data = null;
   try { data = await res.json(); } catch (e) { /* not JSON */ }
   if (!res.ok || !data) {
     const msg = data && data.error ? data.error
-      : res.status === 404 || res.status === 501 ? 'The Bloom server isn’t running — start it with npm start.'
+      : res.status === 404 || res.status === 501 ? 'The Lepak server isn’t running — start it with npm start.'
       : 'Something went wrong (' + res.status + ').';
     throw Object.assign(new Error(msg), { status: res.status });
   }
@@ -42,15 +43,16 @@ export function startLive(res) {
   clearTimers('sim');
   state.mode = 'live';
   state.session = { memberId: res.memberId, token: res.token };
-  saveSession(res.groupId, state.session);
+  saveSession(res.groupId, Object.assign({}, sessions()[res.groupId], state.session)); // keep what you'd already seen
   store.set('bloom.current', res.groupId);
   state.friends = [];
   state.custom = [];
   state.me = { id: res.memberId, name: 'You', color: '#2F6FEB', avail: new Set(), votes: {}, joined: true };
-  state.pickRun = state.pickStops = null;
+  state.pickRun = state.pickStops = state.week = state.plan = null;
   state.milestones = {};
   applyState(res.state, true);
-  saveSession(res.groupId, Object.assign({}, state.session, { title: state.group.title }));
+  saveSession(res.groupId, Object.assign({}, sessions()[res.groupId], state.session, { title: state.group.title }));
+  catchUp(res.groupId, true);
   startSync();
 }
 
@@ -60,14 +62,14 @@ export function startDemo(title, name) {
   store.set('bloom.current', '');
   setWeek(null);
   state.title = title;
-  state.me = { id: 'me', name: name, color: '#2F6FEB', avail: new Set(), votes: {}, joined: true };
+  state.me = { id: 'me', name: name, color: '#2F6FEB', avail: new Set(), votes: {}, joined: true, isHost: true };
   state.friends = FRIENDS.map((f) => Object.assign({}, f, { avail: new Set(), votes: {}, joined: false }));
   state.sim = { times: false, votes: false };
   state.deckIndex = 0;
   state.custom = [];
   state.milestones = {};
   state.coachDone = { grid: false, deck: false };
-  state.pickRun = state.pickStops = null;
+  state.pickRun = state.pickStops = state.week = state.plan = null;
 }
 
 // Merge the server's copy of the group into local state.
@@ -75,6 +77,13 @@ export let pendingSave = null;
 export function applyState(data, first) {
   const g = data.group;
   if (!state.group || state.group.startDate !== g.startDate) setWeek(g.startDate);
+  // The host's locked-in plan (or null). Tell everyone when it changes.
+  const wasPlan = state.plan ? JSON.stringify(state.plan) : '';
+  state.plan = g.plan || null;
+  if (!first && (state.plan ? JSON.stringify(state.plan) : '') !== wasPlan) {
+    toast(null, state.plan ? '🎉 ' + (g.host || 'The host') + ' locked in the plan!' : 'The host reopened the plan');
+    announce(state.plan ? 'The plan is locked in. Open step 3 to see it.' : 'The host reopened the plan.');
+  }
   state.group = g;
   state.title = g.title;
   const known = new Set(state.friends.map((f) => f.id));
@@ -143,6 +152,7 @@ export async function pull() {
     if (failures >= 2) toast(null, '🟢 Back online');
     failures = 0;
     applyState(data, false);
+    catchUp(state.group.id, false);
     refresh();
   } catch (e) {
     if (e.status === 401 || e.status === 404) { stopSync(); toast(null, e.message); return; }
@@ -150,6 +160,27 @@ export async function pull() {
     if (failures === 2) toast(null, 'Connection lost — retrying…');
   }
 }
+// People fill in on different days. When you come back, one short line says what changed
+// since you last looked ("2 new ideas · Maya added times"); while you're here it just keeps track.
+function catchUp(gid, returning) {
+  const now = {
+    places: state.custom.map((c) => c.id),
+    painted: state.friends.filter((f) => f.avail.size).map((f) => f.id),
+    plan: !!state.plan,
+  };
+  const seen = (sessions()[gid] || {}).seen;
+  if (returning && seen) {
+    const ideas = state.custom.filter((c) => seen.places.indexOf(c.id) === -1 && c.addedBy !== state.me.id).length;
+    const timed = state.friends.filter((f) => f.avail.size && seen.painted.indexOf(f.id) === -1);
+    const bits = [];
+    if (now.plan && !seen.plan) bits.push('🎉 The plan is locked in');
+    if (ideas) bits.push(ideas + (ideas === 1 ? ' new idea' : ' new ideas'));
+    if (timed.length) bits.push(namesList(timed) + ' added times');
+    if (bits.length) { toast(null, bits.join(' · ')); announce('Since your last visit: ' + bits.join(', ') + '.'); }
+  }
+  saveSession(gid, Object.assign({}, sessions()[gid], { seen: now }));
+}
+
 let syncGen = 0; // bumps on every start/stop so an old loop can't keep running
 export function startSync() {
   stopSync();
@@ -188,12 +219,12 @@ export async function openInvite(gid) {
   state.joinId = gid;
   const sess = sessions()[gid];
   if (sess) {
-    if (state.mode === 'live' && state.group && state.group.id === gid) { go('times', false); return; }
+    if (state.mode === 'live' && state.group && state.group.id === gid) { go(resumeStep(), false); return; }
     state.session = sess;
     try {
       const data = await api('GET', '/groups/' + encodeURIComponent(gid) + '/state');
       startLive({ groupId: gid, memberId: sess.memberId, token: sess.token, state: data });
-      go('times');
+      go(resumeStep()); // back where you left off (or the locked plan)
       return;
     } catch (e) {
       state.session = null;
@@ -220,7 +251,7 @@ export function joinHTML() {
     return '<section class="join-wrap"><div class="join-card">' +
       '<div class="join-mark" aria-hidden="true">🔗</div><h1>Invite not found</h1>' +
       '<p class="join-sub">' + esc(invite.error) + '</p>' +
-      '<a class="btn" href="#/">Go to Bloom</a></div></section>';
+      '<a class="btn" href="#/">Go to Lepak</a></div></section>';
   }
   return '<section class="join-wrap"><form class="join-card" id="joinForm" novalidate>' +
     '<img class="join-mark" src="icon.svg" width="64" height="64" alt="">' +

@@ -1,10 +1,10 @@
-# Bloom — Plans That Actually Happen
+# Lepak — Plans That Actually Happen
 
-**Don't leave your plans in the bud. Make room for Bloom.**
+**Stop saying “soon”. Make time to lepak.**
 
 *Because “we should hang out sometime” deserves to become “see you there!”*
 
-Bloom is a collaborative group-planning platform that helps friends find common free time, discover places to go, and turn endless group-chat discussions into actual plans.
+Lepak is a collaborative group-planning platform that helps friends find common free time, discover places to go, and turn endless group-chat discussions into actual plans.
 
 No more scheduling headaches, unanswered messages, or forgotten hangouts.
 
@@ -22,14 +22,15 @@ Planning a group outing should be exciting. Instead, it often looks something li
 And somehow, another day never comes.
 Traditional scheduling tools focus on availability, while polls focus on preferences. But planning a successful outing requires both.
 
-**Bloom brings everything together in one place.**
+**Lepak brings everything together in one place.**
 
-## How Bloom Works
+## How Lepak Works
 
-Bloom simplifies group planning into three steps.
+Lepak simplifies group planning into three steps.
 
 ### 1. WHEN — Find Your Common Free Time
 
+- Plan up to a month ahead (5 weeks from the day the group is created): pick a month, then swipe or tap through its weeks; the grid shows one week at a time.
 - Paint your available hours onto an interactive weekly calendar.
 - See everyone's availability through a collaborative heatmap.
 - Identify overlapping time slots automatically.
@@ -44,11 +45,13 @@ Bloom simplifies group planning into three steps.
 - See which places your friends prefer.
 - Identify group favourites through collective voting.
 
-### 3. BLOOM — Watch Your Plans Come Together
+### 3. LEPAK — Watch Your Plans Come Together
 
-- See your group's planning progress represented by a blooming flower.
-- Receive a suggested plan based on availability and preferences.
-- The plan grows with your free time: under 2 hours gets one place; longer gets back-to-back stops (up to 2 for 2–4 hours, 3 for 4–6 hours, 4 for a full day), e.g. bowling → lunch → picnic → café. Meals land near lunch or dinner time, drinks come last, and you can swap stops under **Change the time or stops**.
+- See your group's planning progress as a couch: each friend takes a seat as they add their hours and votes.
+- Nobody waits for anybody: add your hours and ideas whenever suits you, then tap **I’m done**.
+- Made for groups of 3 or more, filling in on different days. Coming back lands you where you left off, with one line on what's new ("2 new ideas · Maya added times"). If nobody's hours overlap yet, Lepak says so and the host can nudge.
+- The host sees every time (with date votes) and idea (with swipes), chats it through with the group, and taps **Lock it in**. Until then, everyone else sees “Waiting for the host”; afterwards everyone sees **All set! You’re good to go**.
+- One place by default. If the group is free for longer, the host picks **+ Add a stop** to add back-to-back stops (up to 2 for 2–4 hours, 3 for 4–6 hours, 4 for a full day). Meals land near lunch or dinner time (never two in a row), drinks come last, and ✕ removes a stop.
 - View the confirmed date, time, venue, and participants.
 - Check the weather forecast for your outing.
 - Export the plan to your calendar.
@@ -67,12 +70,12 @@ Bloom simplifies group planning into three steps.
 | Smart place discovery | Singapore venue search with typo tolerance |
 | Branch discovery | Find different outlets of restaurants and retail chains |
 | Group favourites | Rank suggestions using everyone's preferences |
-| Bloom progress | Visualise group participation through an animated flower |
+| Couch progress | Visualise group participation: each friend sits down on an animated couch as they take part |
 | Weather forecasts | View conditions for your planned outing |
 | Group invitations | Share private invitation links and group passwords |
 | Calendar integration | Export confirmed plans as calendar events |
 | Accessibility | Keyboard support, contrast settings, reduced motion and more |
-| Demo mode | Explore Bloom with simulated friends without saving data |
+| Demo mode | Explore Lepak with simulated friends without saving data |
 
 ---
 
@@ -90,7 +93,7 @@ Bloom simplifies group planning into three steps.
 | Weather | Open-Meteo API |
 | Version control | Git and GitHub |
 
-Bloom uses native JavaScript modules without requiring a frontend framework or build step.
+Lepak uses native JavaScript modules without requiring a frontend framework or build step.
 
 ### System Architecture
 
@@ -170,7 +173,7 @@ For IPv4 networks, Supabase's Session Pooler is an available alternative to a di
 
 **Security:** Never commit `.env`, database passwords, or credentials to GitHub. Each developer should configure their own database connection.
 
-### 5. Start Bloom
+### 5. Start Lepak
 
 ```bash
 npm start
@@ -194,7 +197,7 @@ The application requires a valid `DATABASE_URL`; it does not silently fall back 
 
 ## Database — Supabase PostgreSQL
 
-Bloom uses Supabase's hosted PostgreSQL database to store information for real groups.
+Lepak uses Supabase's hosted PostgreSQL database to store information for real groups.
 
 ### Database Tables
 
@@ -215,11 +218,11 @@ Bloom uses Supabase's hosted PostgreSQL database to store information for real g
 - Row Level Security (RLS) is enabled on application tables without public access policies.
 - Browser users do not require direct access to Supabase database tables.
 
-Bloom currently uses its own group-password and session-token system rather than Supabase Auth.
+Lepak currently uses its own group-password and session-token system rather than Supabase Auth.
 
 ### SQLite Migration
 
-Bloom originally used SQLite for local data storage.
+Lepak originally used SQLite for local data storage.
 The repository includes `migrate_sqlite_to_postgres.py` for copying data from the previous SQLite database to PostgreSQL.
 
 A dry run can be performed with:
@@ -235,7 +238,7 @@ Existing SQLite databases should be retained as backups until migration results 
 
 ## Singapore Place Discovery
 
-Bloom uses free and open-source geographic data to help groups discover venues across Singapore.
+Lepak uses free and open-source geographic data to help groups discover venues across Singapore.
 
 ### 1. Local OpenStreetMap Place Index
 
@@ -266,7 +269,7 @@ For example:
 | `Din Tai Fung` | Find indexed branches |
 | `Bubble tea Bugis` | Find relevant beverage shops |
 
-Results depend on the coverage and freshness of the underlying OpenStreetMap data. Bloom does not guarantee a complete directory of Singapore businesses.
+Results depend on the coverage and freshness of the underlying OpenStreetMap data. Lepak does not guarantee a complete directory of Singapore businesses.
 
 ### 2. Photon API
 
@@ -298,14 +301,14 @@ Public Overpass, Photon, and Nominatim instances are shared services with usage 
 
 ### Optional Google Places Integration
 
-The backend includes optional Google Places functionality, but it is not required for Bloom's free OpenStreetMap search.
+The backend includes optional Google Places functionality, but it is not required for Lepak's free OpenStreetMap search.
 Google Places requires separate API credentials and may incur usage charges.
 
 ---
 
 ## Weather Integration
 
-Bloom uses the **Open-Meteo API** to display weather forecasts for planned outings.
+Lepak uses the **Open-Meteo API** to display weather forecasts for planned outings.
 
 Features include:
 
@@ -323,7 +326,7 @@ Forecast accuracy and availability depend on the API and forecast horizon.
 
 ## Accessibility and Inclusive Design
 
-Bloom aims to make group planning approachable and accessible.
+Lepak aims to make group planning approachable and accessible.
 
 Features include:
 
@@ -338,14 +341,14 @@ Features include:
 - Touch-friendly controls
 - Responsive layouts for mobile devices
 
-Bloom also incorporates interaction-design principles including Hick's Law, social proof, goal-gradient effects, progressive disclosure, and feedback through visual cues.
+Lepak also incorporates interaction-design principles including Hick's Law, social proof, goal-gradient effects, progressive disclosure, and feedback through visual cues.
 These features aim to reduce cognitive load and encourage group participation.
 
 ---
 
 ## Testing
 
-Bloom includes automated tests for its backend and place-search functionality.
+Lepak includes automated tests for its backend and place-search functionality.
 
 Run:
 
@@ -434,7 +437,7 @@ Bloom-hyperbloom/
 
 ## Security Considerations
 
-Bloom uses group passwords and private session tokens to restrict access to group information.
+Lepak uses group passwords and private session tokens to restrict access to group information.
 The Python backend handles authorization, while Supabase provides persistent database storage.
 Before production deployment, database credentials, group-access controls, rate limiting, API permissions, and privacy requirements should be reviewed and tested.
 A production deployment should also use HTTPS and appropriate operational monitoring.
@@ -469,7 +472,7 @@ Map data © OpenStreetMap contributors.
 
 ---
 
-### Bloom
+### Lepak
 
-**Don't leave your plans in the bud. Make room for Bloom.**
+**Stop saying “soon”. Make time to lepak.**
 *Because the best memories begin when plans actually happen.*

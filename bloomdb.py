@@ -1,4 +1,4 @@
-"""PostgreSQL (Supabase) connection handling for Bloom.
+"""PostgreSQL (Supabase) connection handling for Lepak.
 
 Reads DATABASE_URL, refuses to start on a missing or malformed value (there is
 no silent fallback to SQLite), and hands out pooled connections that commit on

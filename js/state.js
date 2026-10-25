@@ -23,7 +23,9 @@ export const state = {
   milestones: {},
   coachDone: { grid: false, deck: false },
   pickRun: null,
-  pickStops: null,     // the plan's places, in order; null = Bloom picks them
+  pickStops: null,     // the plan's places, in order; null = the app's single best pick
+  plan: null,          // the plan the host locked in: { date, start, end, stops } (null = still deciding)
+  week: null,          // which week of the plan the grid shows (null = the first one still open)
 };
 export const people = () => [state.me].concat(state.friends);
 export const total = () => people().length;

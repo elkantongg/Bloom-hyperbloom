@@ -3,11 +3,11 @@ import { $, $$, esc, reduceMotion } from './util.js';
 import { dayLong, dayShort, fmtRange } from './dates.js';
 import { allPlaces, placeTitle, votedCount } from './data.js';
 import { people, state, total } from './state.js';
-import { bloomScore, computeRuns, personProgress, rankPlaces } from './derive.js';
-import { updateStepper } from './router.js';
+import { bloomScore, computeRuns, lockedRun, personProgress, rankPlaces } from './derive.js';
+import { render, updateStepper } from './router.js';
 import { renderBest, updateAllCells } from './times.js';
 import { dragActive, renderDeck, renderRanking, updateCardFriends, vote, voting } from './places.js';
-import { renderPlanCard, renderWaiting } from './bloom.js';
+import { bloomView, renderPlanCard, renderWaiting } from './bloom.js';
 import { renderWeatherPanel } from './weather.js';
 
 export function announce(msg) {
@@ -21,7 +21,9 @@ export function toast(person, msg) {
   el.className = 'toast';
   el.innerHTML = (person ? avatar(person, 'sm') : '') + '<span>' + esc(msg) + '</span>';
   wrap.appendChild(el);
-  while (wrap.children.length > 3) wrap.firstChild.remove();
+  // Phones show one notice at a time (the newest), so they never cover the screen.
+  const keep = window.matchMedia('(max-width: 600px)').matches ? 1 : 3;
+  while (wrap.children.length > keep) wrap.firstChild.remove();
   setTimeout(() => el.remove(), 3300);
 }
 export function avatar(p, size) {
@@ -38,68 +40,81 @@ export function namesList(list) {
   return n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1];
 }
 
-export const PETAL = 'M0,0 C-26,-22 -24,-70 0,-86 C24,-70 26,-22 0,0 Z';
-export function flowerSVG(opts) {
+// The couch: one seat per friend. Someone "sits down" (their circle grows into the
+// seat) as they add hours and vote; an empty dashed seat means they haven't joined yet.
+export function couchSVG(opts) {
   opts = opts || {};
   const ps = people();
-  let petals = '';
+  const inner = 176, x0 = -88, seat = inner / ps.length;
+  const r = Math.min(17, seat * 0.38);
+  let sitters = '';
   ps.forEach((p, i) => {
-    const a = (360 / ps.length) * i;
-    petals += '<g transform="rotate(' + a + ')"><path class="petal" data-pid="' + p.id + '" d="' + PETAL + '" fill="' + p.color + '"/></g>';
+    const cx = (x0 + seat * (i + 0.5)).toFixed(1);
+    sitters += '<g class="seat" transform="translate(' + cx + ',-8)" style="--i:' + i + '">' +
+      '<circle class="seat-empty" r="' + r.toFixed(1) + '"/>' +
+      '<g class="sitter" data-pid="' + p.id + '"><circle r="' + r.toFixed(1) + '" fill="' + p.color + '"/>' +
+        (r >= 9 ? '<text y="' + (r * 0.36).toFixed(1) + '" font-size="' + (r * 0.95).toFixed(1) + '">' + esc(p.name.trim().charAt(0).toUpperCase() || '?') + '</text>' : '') +
+      '</g></g>';
   });
-  const stem = opts.stem
-    ? '<path class="stem" d="M0,20 C6,80 -6,120 0,170" fill="none" stroke-width="7" stroke-linecap="round"/>' +
-      '<path class="leaf" d="M0,120 C30,100 58,108 70,92 C52,128 22,132 0,126 Z"/>' +
-      '<path class="leaf" d="M0,140 C-30,124 -56,132 -66,118 C-50,152 -22,152 0,146 Z"/>'
-    : '';
-  const vb = opts.stem ? '-110 -110 220 290' : '-100 -100 200 200';
-  return '<svg class="flower" data-stem="' + (opts.stem ? 1 : 0) + '" viewBox="' + vb + '" role="img" aria-label="' + esc(flowerLabel()) + '">' +
-    stem + petals +
-    '<circle class="core" r="18" fill="var(--gold)"/>' +
-    '<circle r="6" fill="#fff" opacity=".55" cx="-5" cy="-5"/>' +
+  // The final reveal ("party"): sparkles that burst around the couch once everyone's sat down.
+  // (The wrapper holds the position; the animation only scales/spins the star inside it.)
+  const sparkle = (x, y, sz, i, c) => '<g transform="translate(' + x + ',' + y + ') scale(' + sz + ')">' +
+    '<path class="c-spark" style="--i:' + i + '" d="M0 -10 L2.5 -2.5 L10 0 L2.5 2.5 L0 10 L-2.5 2.5 L-10 0 L-2.5 -2.5 Z" fill="' + c + '"/></g>';
+  const sparks = opts.party ? [[-104, -54, 1.1, 0, '#FFD25E'], [100, -50, 0.9, 1, '#FF8A4C'], [-60, -70, 0.7, 2, '#7C5CFF'],
+    [56, -72, 1, 3, '#FFD25E'], [0, -80, 1.2, 4, '#2DD4A7'], [-118, -4, 0.6, 5, '#FF7A7A'], [116, -2, 0.7, 6, '#7EA8FF']]
+    .map((x) => sparkle.apply(null, x)).join('') : '';
+  return '<svg class="couch' + (opts.party ? ' party' : '') + '" data-big="' + (opts.big ? 1 : 0) + '" data-party="' + (opts.party ? 1 : 0) + '" ' +
+      'viewBox="' + (opts.party ? '-124 -86 248 136' : '-112 -62 224 112') + '" role="img" aria-label="' + esc(couchLabel()) + '">' +
+    '<g class="c-body">' +
+      '<rect class="c-back" x="-94" y="-46" width="188" height="52" rx="18"/>' +
+      '<rect class="c-arm" x="-110" y="-20" width="26" height="50" rx="11"/>' +
+      '<rect class="c-arm" x="84" y="-20" width="26" height="50" rx="11"/>' +
+      '<rect class="c-seat" x="-90" y="4" width="180" height="26" rx="10"/>' +
+      '<rect class="c-leg" x="-96" y="30" width="8" height="12" rx="2"/><rect class="c-leg" x="88" y="30" width="8" height="12" rx="2"/>' +
+      sitters +
+    '</g>' + sparks +
     '</svg>';
 }
-export function flowerLabel() {
-  return 'Plan flower: ' + bloomScore() + '% in bloom. One petal per person; petals open as people add times and vote.';
+export function couchLabel() {
+  const seated = people().filter((p) => personProgress(p) >= 1).length;
+  return 'The couch: ' + bloomScore() + '% ready. One seat per person; people sit down as they add times and vote. ' + seated + ' of ' + total() + ' done.';
 }
-export function updateFlowers() {
+export function updateCouch() {
   const score = bloomScore();
-  $$('.flower').forEach((svg) => {
-    if (svg.querySelectorAll('.petal').length !== people().length) {
+  $$('.couch').forEach((svg) => {
+    if (svg.querySelectorAll('.sitter').length !== people().length) {
       const fresh = document.createElement('div');
-      fresh.innerHTML = flowerSVG({ stem: svg.dataset.stem === '1' });
+      fresh.innerHTML = couchSVG({ big: svg.dataset.big === '1', party: svg.dataset.party === '1' });
       svg.replaceWith(fresh.firstChild);
     }
   });
-  $$('.flower').forEach((svg) => {
+  $$('.couch').forEach((svg) => {
     people().forEach((p) => {
-      const petal = svg.querySelector('.petal[data-pid="' + p.id + '"]');
-      if (!petal) return;
-      const prog = personProgress(p);
-      petal.style.setProperty('--s', (0.18 + prog * 0.82).toFixed(3));
-      petal.classList.toggle('bud', !p.joined);
+      const s = svg.querySelector('.sitter[data-pid="' + p.id + '"]');
+      if (!s) return;
+      // On the final plan, everyone who's coming is fully seated; anyone who can't leaves an empty seat.
+      const going = svg.dataset.party === '1' && lockedRun() ? lockedRun().who.indexOf(p) !== -1 : null;
+      s.style.setProperty('--s', going !== null ? (going ? '1' : '0') : p.joined ? (0.35 + personProgress(p) * 0.65).toFixed(3) : '0');
     });
-    const core = svg.querySelector('.core');
-    if (core) core.setAttribute('r', String(14 + score * 0.12));
-    svg.setAttribute('aria-label', flowerLabel());
+    svg.setAttribute('aria-label', couchLabel());
   });
-  $$('[data-bloom-score]').forEach((el) => { el.textContent = score ? score + '%' : '🌱'; });
-  $$('[data-bloom-label]').forEach((el) => { el.textContent = score ? 'in bloom' : 'just planted'; });
+  $$('[data-bloom-score]').forEach((el) => { el.textContent = score ? score + '%' : '👋'; });
+  $$('[data-bloom-label]').forEach((el) => { el.textContent = score ? 'ready' : 'just started'; });
 }
 
 export function sidebarHTML() {
   return '<aside class="side" aria-label="Your group">' +
     '<div class="panel group">' +
-      '<div class="flower-wrap">' + flowerSVG() + '</div>' +
+      '<div class="couch-wrap">' + couchSVG() + '</div>' +
       '<div>' +
-        '<div class="bloom-meter"><strong data-bloom-score>🌱</strong><span data-bloom-label>just planted</span></div>' +
+        '<div class="bloom-meter"><strong data-bloom-score>👋</strong><span data-bloom-label>just started</span></div>' +
         '<h2 class="sr-only">Who’s in</h2>' +
         '<ul class="people" id="people"></ul>' +
       '</div>' +
     '</div>' +
     '<p class="demo-note">' + (state.mode === 'live'
       ? '🟢 Live group · changes from everyone appear within a few seconds.'
-      : 'Demo mode: Maya, Jun, Priya and Sam are simulated friends so you can see Bloom update live.') + '</p>' +
+      : 'Demo mode: Maya, Jun, Priya and Sam are simulated friends so you can see Lepak update live.') + '</p>' +
   '</aside>';
 }
 export function statusOf(p) {
@@ -127,7 +142,7 @@ export function refresh() {
   refreshQueued = true;
   requestAnimationFrame(() => {
     refreshQueued = false;
-    updateFlowers();
+    updateCouch();
     updatePeople();
     updateStepper();
     if (state.step === 'times') { updateAllCells(); renderBest(); }
@@ -138,7 +153,12 @@ export function refresh() {
       const want = allPlaces().slice(state.deckIndex, state.deckIndex + 3).map((p) => p.id).reverse().join(',');
       if (!dragActive && !voting && shown !== want) renderDeck();
     }
-    if (state.step === 'bloom') { renderPlanCard(); renderWaiting(); }
+    if (state.step === 'bloom') {
+      // The host locked (or reopened) the plan while you were looking: switch views.
+      const stage = $('#main [data-view]');
+      if (stage && stage.dataset.view !== bloomView()) render();
+      else { renderPlanCard(); renderWaiting(); }
+    }
     checkMilestones();
   });
 }

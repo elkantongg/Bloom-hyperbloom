@@ -2,7 +2,7 @@
 import { $, $$, esc, reduceMotion } from './util.js';
 import { allPlaces, commonsImage, commonsPage, currentVotes, FRIEND_VOTES, googleLink, KINDS, placeTitle, PLACES, votedCount } from './data.js';
 import { people, state, total } from './state.js';
-import { rankPlaces } from './derive.js';
+import { isHost, rankPlaces } from './derive.js';
 import { announce, avatarStack, buzz, namesList, refresh, sidebarHTML, toast } from './ui.js';
 import { go, later } from './router.js';
 import { simulateTimes } from './times.js';
@@ -36,7 +36,7 @@ export function placesHTML() {
   '</section>' + sidebarHTML() + '</div>' +
   '<div class="actionbar"><button type="button" class="btn ghost small" id="undoVote">↶ Undo</button>' +
     '<p class="ab-status" id="toBloomHint"></p>' +
-    '<button type="button" class="btn" id="toBloom">See the plan bloom →</button></div>';
+    '<button type="button" class="btn" id="toBloom">' + (isHost() ? 'Next: pick the plan →' : 'I’m done →') + '</button></div>';
 }
 
 export function cardHTML(pl, depth) {
@@ -101,7 +101,7 @@ export function renderDeck() {
   $$('#voteBtns button').forEach((b) => { b.disabled = !rest.length; });
   if (!rest.length) {
     deck.innerHTML = allPlaces().length
-      ? '<div class="deck-done"><div class="big" aria-hidden="true">✓</div><h3>All swiped!</h3><p class="empty">Check the group favourites, then see your plan bloom. New ideas from friends will pop up here.</p></div>'
+      ? '<div class="deck-done"><div class="big" aria-hidden="true">✓</div><h3>All swiped!</h3><p class="empty">Check the group favourites, then see your plan. New ideas from friends will pop up here.</p></div>'
       : '<div class="deck-done"><div class="big" aria-hidden="true">💡</div><h3>No ideas yet</h3><p class="empty">Add the first place or activity in <strong>Got another idea?</strong> — everyone in the group will be able to swipe on it.</p></div>';
     return;
   }
@@ -254,10 +254,10 @@ export function renderRanking() {
     const count = allPlaces().length;
     const done = votedCount(state.me);
     const left = count - done;
-    btn.disabled = !count || left > 0;
-    hint.innerHTML = !count ? '<span>💡 Add the first idea to get the deck going</span>'
+    btn.disabled = false; // suggest and swipe as much as you like, then carry on; nobody waits
+    hint.innerHTML = !count ? '<span>💡 Suggest a place or activity for the group</span>'
       : '<span class="ab-progress" aria-hidden="true"><i style="--w:' + Math.round(done / count * 100) + '%"></i></span>' +
-        '<span>' + (left > 0 ? done + ' of ' + count + ' swiped' + (done && left <= 2 ? ' — almost there!' : '') : '✓ All swiped — ready when you are') + '</span>';
+        '<span>' + (left > 0 ? done + ' of ' + count + ' swiped' : '✓ All swiped') + '</span>';
     const undo = $('#undoVote');
     if (undo) undo.disabled = !done;
   }

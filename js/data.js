@@ -76,7 +76,8 @@ export function allPlaces() {
 export function votedCount(p) { return allPlaces().filter((pl) => pl.id in p.votes).length; }
 export function currentVotes(p) {
   const ids = new Set(allPlaces().map((pl) => pl.id));
-  return Object.fromEntries(Object.entries(p.votes).filter(([id]) => ids.has(id)));
+  // Place votes, plus votes on tied times ("t:2026-10-27@19-21").
+  return Object.fromEntries(Object.entries(p.votes).filter(([id]) => ids.has(id) || id.startsWith('t:')));
 }
 // The exact Google Maps page when we have it; otherwise a Google search for the name.
 export const googleLink = (pl) => pl.link || 'https://www.google.com/search?q=' + encodeURIComponent(pl.q || pl.name);

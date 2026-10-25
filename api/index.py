@@ -1,5 +1,5 @@
 """Vercel entry point. Every request (the page, its scripts and the API) goes through
-Bloom's own request handler in server.py, so the same file whitelist, security headers
+Lepak's own request handler in server.py, so the same file whitelist, security headers
 and rate limits apply as when running `python3 server.py`.
 
 Vercel runs this as a serverless function: it may start fresh for a request, and several
@@ -29,7 +29,7 @@ def _database_ready():
                 # and keeps Supabase's connection limit free for other copies.
                 server.init_database(min_size=1, max_size=int(os.environ.get("BLOOM_DB_POOL_MAX", "2")))
             except DatabaseConfigError as e:
-                print(f"Bloom database unavailable: {e}")  # already password-free
+                print(f"Lepak database unavailable: {e}")  # already password-free
                 return False
     return True
 
@@ -38,5 +38,5 @@ class handler(server.Handler):
     # Pages and place search don't need the database, so only group requests wait for it.
     def api(self, *args, **kwargs):
         if not _database_ready():
-            return self.send_json(503, {"error": "Bloom can't reach its database right now. Try again in a minute."})
+            return self.send_json(503, {"error": "Lepak can't reach its database right now. Try again in a minute."})
         return super().api(*args, **kwargs)

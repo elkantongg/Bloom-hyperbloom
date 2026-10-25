@@ -13,7 +13,7 @@ export async function loadWeather() {
   WEATHER.status = 'loading';
   try {
     const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + WEATHER.lat + '&longitude=' + WEATHER.lon +
-      '&hourly=temperature_2m,precipitation_probability,weather_code&forecast_days=8&timezone=auto';
+      '&hourly=temperature_2m,precipitation_probability,weather_code&forecast_days=16&timezone=auto';
     const res = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();

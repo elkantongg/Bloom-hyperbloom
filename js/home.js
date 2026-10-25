@@ -10,8 +10,8 @@ export function homeHTML() {
   return '' +
     '<section class="hero">' +
       '<div>' +
-        '<h1>Make room for <em>Bloom</em></h1>' +
-        '<p class="lede">Don’t leave your plans in the bud.</p>' +
+        '<h1>Time to <em>Lepak</em></h1>' +
+        '<p class="lede">Don’t say never jio</p>' +
         myGroupsHTML() +
         '<form class="start-card" id="startForm" novalidate>' +
           '<div class="field"><label for="planTitle">What’s the plan?</label>' +
@@ -24,7 +24,7 @@ export function homeHTML() {
           '<p class="form-error" id="startError" role="alert"></p>' +
           '<button class="btn" type="submit" id="createBtn">Create group & get invite link →</button>' +
           '<button class="btn ghost" type="button" id="demoBtn">Just looking? Try a demo (nothing is saved)</button>' +
-          '<p class="reassure"><span>✓ No sign-ups</span><span>✓ Free</span><span>✓ About 2 minutes</span></p>' +
+          '<p class="reassure"><span>✓ No sign-ups</span><span>✓ Free</span><span>✓ For 3+ friends</span></p>' +
         '</form>' +
       '</div>' +
       '<div class="hero-art" aria-hidden="true">' +
@@ -40,8 +40,8 @@ export function homeHTML() {
     '<h2 class="section-title" id="howTitle">Three steps. Zero arguments.</h2>' +
     '<ol class="how">' +
       '<li><span class="step-n" aria-hidden="true">1</span><span class="ico" aria-hidden="true">🖌️</span><h3>Paint your time</h3><p>Drag across the hours you’re free. The brighter a square, the more friends can make it.</p></li>' +
-      '<li><span class="step-n" aria-hidden="true">2</span><span class="ico" aria-hidden="true">👆</span><h3>Swipe on places</h3><p>Love it, maybe, or pass. No debates, no “idk, you pick”. Step-free access is shown on every card.</p></li>' +
-      '<li><span class="step-n" aria-hidden="true">3</span><span class="ico" aria-hidden="true">🌸</span><h3>Watch it bloom</h3><p>Every friend is a petal. When everyone’s in, you get one plan to add to your calendar.</p></li>' +
+      '<li><span class="step-n" aria-hidden="true">2</span><span class="ico" aria-hidden="true">👆</span><h3>Suggest &amp; swipe</h3><p>Add your ideas for food, drinks or things to do, and swipe on your friends’. No debates, no “idk, you pick”.</p></li>' +
+      '<li><span class="step-n" aria-hidden="true">3</span><span class="ico" aria-hidden="true">🛋️</span><h3>Lock it in</h3><p>Everyone adds their bit whenever they’re free. The host picks the plan, and the whole group sees it: date, place, who’s coming and the weather.</p></li>' +
     '</ol></section>';
 }
 export function versusHTML() {
@@ -54,20 +54,20 @@ export function versusHTML() {
     ['M', '#E03131', 'wait which day did we say'],
   ];
   return '<section class="versus" id="versus" aria-labelledby="versusTitle">' +
-    '<p class="section-label">Why Bloom?</p>' +
+    '<p class="section-label">Why Lepak?</p>' +
     '<h2 class="section-title" id="versusTitle">Sound familiar?</h2>' +
     '<div class="versus-grid">' +
       '<figure class="vs-card before"><figcaption><span class="vs-tag">Before</span> The group chat</figcaption>' +
         '<ul class="chat">' + chat.map((c, i) => '<li style="--i:' + i + '"><span class="av sm" style="--c:' + c[1] + '" aria-hidden="true">' + c[0] + '</span><span class="bubble">' + c[2] + '</span></li>').join('') + '</ul>' +
         '<p class="vs-foot">Scroll, scroll… still no plan. 😮‍💨</p></figure>' +
       '<div class="vs-arrow" aria-hidden="true">→</div>' +
-      '<figure class="vs-card after"><figcaption><span class="vs-tag good">With Bloom</span> One clear answer</figcaption>' +
+      '<figure class="vs-card after"><figcaption><span class="vs-tag good">With Lepak</span> One clear answer</figcaption>' +
         '<div class="mini-plan">' +
           '<div class="mini-grid" aria-hidden="true">' + Array.from({ length: 21 }, (_, i) => '<i style="--h:' + [0, .2, .4, 1, 1, .6, .2][i % 7] * (i > 6 && i < 14 ? 1 : .55) + '"></i>').join('') + '</div>' +
           '<p class="mp-when">⭐ Saturday 3–6pm</p><p class="mp-where">🍜 Lantern Noodle Bar</p>' +
           '<p class="mp-who"><span class="av-stack">' + ['#2F6FEB', '#E03131', '#D9831A', '#7C5CFF', '#11966A'].map((c, i) => '<span class="av sm" style="--c:' + c + '" aria-hidden="true">' + 'YMJPS'[i] + '</span>').join('') + '</span> 5 of 5 coming</p>' +
         '</div>' +
-        '<p class="vs-foot">Decided in minutes, not days. 🌸</p></figure>' +
+        '<p class="vs-foot">Decided in minutes, not days. 🛋️</p></figure>' +
     '</div></section>';
 }
 export function myGroupsHTML() {
@@ -82,14 +82,21 @@ export function myGroupsHTML() {
     '<button type="button" class="link-btn" id="startFresh">Start fresh</button></p></section>';
 }
 export function heroMark() {
-  // Three schedules drifting together; the spark is where everyone overlaps.
-  return '<svg class="hero-mark" viewBox="-150 -150 300 300">' +
-    '<defs><radialGradient id="glow"><stop offset="0" stop-color="#FFD25E" stop-opacity=".9"/><stop offset="1" stop-color="#FFD25E" stop-opacity="0"/></radialGradient></defs>' +
-    '<circle class="ring r1" cx="0" cy="-42" r="80" fill="#FF7A3D"/>' +
-    '<circle class="ring r2" cx="-37" cy="24" r="80" fill="#14B8A6"/>' +
-    '<circle class="ring r3" cx="37" cy="24" r="80" fill="#3B82F6"/>' +
-    '<circle class="glow" cx="0" cy="2" r="46" fill="url(#glow)"/>' +
-    '<path class="spark" d="M0 -26 L7 -6 L27 2 L7 9 L0 30 L-7 9 L-27 2 L-7 -6 Z" fill="#FFD25E"/>' +
+  // L, E, P, A, K drop onto the couch one by one and bounce until they're comfy.
+  const friends = [['L', '#2F6FEB'], ['E', '#E03131'], ['P', '#D9831A'], ['A', '#7C5CFF'], ['K', '#11966A']];
+  const seats = friends.map((f, i) => '<g class="hm-friend f' + (i + 1) + '" transform="translate(' + (-112 + i * 56) + ',0)">' +
+    '<g class="hm-body"><circle cy="-22" r="22" fill="' + f[1] + '"/>' +
+    '<text y="-13" text-anchor="middle" font-size="23" font-weight="800" fill="#fff">' + f[0] + '</text></g></g>').join('');
+  return '<svg class="hero-mark" viewBox="-190 -120 380 230" role="img" aria-label="Five friends, L, E, P, A and K, sitting down on a couch">' +
+    '<g class="hm-couch">' +
+      '<rect class="hm-back" x="-144" y="-44" width="288" height="66" rx="26"/>' +
+      '<rect class="hm-arm" x="-176" y="-8" width="40" height="70" rx="16"/>' +
+      '<rect class="hm-arm" x="136" y="-8" width="40" height="70" rx="16"/>' +
+      '<rect class="hm-seat" x="-138" y="18" width="276" height="40" rx="12"/>' +
+      '<rect class="hm-leg" x="-164" y="60" width="12" height="18" rx="4"/><rect class="hm-leg" x="152" y="60" width="12" height="18" rx="4"/>' +
+    '</g>' +
+    '<g transform="translate(0,20)">' + seats + '</g>' +
+    '<path class="hm-spark" d="M0 -96 L6 -80 L22 -74 L6 -68 L0 -52 L-6 -68 L-22 -74 L-6 -80 Z" fill="#FFD25E"/>' +
     '</svg>';
 }
 export function bindHome() {

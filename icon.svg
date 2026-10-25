@@ -6,10 +6,14 @@
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="16" fill="url(#bg)"/>
-  <g fill="#fff" fill-opacity=".16" stroke="#fff" stroke-width="3">
-    <circle cx="32" cy="24" r="12"/>
-    <circle cx="23" cy="39" r="12"/>
-    <circle cx="41" cy="39" r="12"/>
+  <!-- Lepak: a couch, the place you hang out -->
+  <g fill="#fff">
+    <rect x="16" y="18" width="32" height="16" rx="6"/>
+    <rect x="9" y="27" width="12" height="17" rx="5"/>
+    <rect x="43" y="27" width="12" height="17" rx="5"/>
+    <rect x="18" y="33" width="28" height="11" rx="3"/>
+    <rect x="13" y="43" width="4" height="6" rx="1.5"/>
+    <rect x="47" y="43" width="4" height="6" rx="1.5"/>
   </g>
-  <path d="M32 26.5 L34 32.5 L40 34 L34 35.5 L32 41.5 L30 35.5 L24 34 L30 32.5 Z" fill="#FFD84D"/>
+  <path d="M20 33.5h24" stroke="#F06A26" stroke-width="2" stroke-linecap="round"/>
 </svg>

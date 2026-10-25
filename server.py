@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bloom server: serves the website and a small JSON API backed by PostgreSQL (Supabase).
+"""Lepak server: serves the website and a small JSON API backed by PostgreSQL (Supabase).
 
 Needs DATABASE_URL in .env and the packages in requirements.txt (psycopg).
 Run:  python3 server.py   (or: npm start)
@@ -61,8 +61,10 @@ KINDS = {"food", "drinks", "activity", "shopping", "other"}
 MAX_CUSTOM_PLACES = 20
 MAX_PLACE_NAME = 80  # e.g. "Escape Room (Orchard Gateway)"
 MAX_MEMBERS = 12
+MIN_GROUP = 3      # a plan can be locked in once at least this many people have joined
 MAX_BODY = 16 * 1024
 SLOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}@\d{1,2}$")
+TIME_VOTE_RE = re.compile(r"^t:\d{4}-\d{2}-\d{2}@\d{1,2}-\d{1,2}$")  # a vote for a tied time, e.g. t:2026-10-27@19-21
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -70,7 +72,7 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # Photon (built on OpenStreetMap) gives search-as-you-type with typo tolerance.
 # Picking a result loads its OpenStreetMap details, plus a Wikimedia photo of that
 # exact place when one exists (otherwise the card shows a map pinned on it).
-UA = "Bloom-hackathon-prototype/1.0 (https://github.com/elkantongg/hyperbloom)"
+UA = "Lepak-hackathon-prototype/1.0 (https://github.com/elkantongg/hyperbloom)"
 REGION = os.environ.get("BLOOM_REGION", "sg")
 SG_BBOX = os.environ.get("BLOOM_BBOX", "103.59,1.15,104.10,1.48")  # minLon,minLat,maxLon,maxLat
 PHOTON = os.environ.get("BLOOM_PHOTON", "https://photon.komoot.io/api/")
@@ -417,7 +419,7 @@ class _Meta(HTMLParser):
             self.title += data
 
 
-LINK_UA = "Mozilla/5.0 (compatible; BloomLinkPreview/1.0; +https://github.com/elkantongg/hyperbloom)"
+LINK_UA = "Mozilla/5.0 (compatible; LepakLinkPreview/1.0; +https://github.com/elkantongg/hyperbloom)"
 GMAPS_PLACE = re.compile(r"/maps/place/([^/?]+)")
 GMAPS_AT = re.compile(r"@(-?\d+\.\d+),(-?\d+\.\d+)")
 
@@ -692,7 +694,7 @@ def init_database(url=None, **options):
         db.apply_schema()
     except psycopg.Error as e:
         db.close()
-        raise DatabaseConfigError("Couldn't set up the Bloom tables: " + redact(e, db.url)) from None
+        raise DatabaseConfigError("Couldn't set up the Lepak tables: " + redact(e, db.url)) from None
     DB = db
     return db
 
@@ -739,7 +741,7 @@ def new_member(conn, group_id, name, color, is_host):
 
 
 def group_state(conn, group_id, member_id):
-    g = conn.execute("SELECT id, title, host_name, start_date FROM groups WHERE id=%s", (group_id,)).fetchone()
+    g = conn.execute("SELECT id, title, host_name, start_date, final_plan FROM groups WHERE id=%s", (group_id,)).fetchone()
     rows = conn.execute(
         "SELECT id, name, color, avail, votes, is_host FROM members WHERE group_id=%s ORDER BY joined_at, seq",
         (group_id,),
@@ -748,7 +750,8 @@ def group_state(conn, group_id, member_id):
         "SELECT id, name, kind, added_by, details FROM places WHERE group_id=%s ORDER BY created_at, seq", (group_id,)
     ).fetchall()
     return {
-        "group": {"id": g["id"], "title": g["title"], "host": g["host_name"], "startDate": g["start_date"]},
+        "group": {"id": g["id"], "title": g["title"], "host": g["host_name"], "startDate": g["start_date"],
+                  "plan": g["final_plan"] or None},  # set once the host locks it in
         "me": member_id,
         "places": [{"id": p["id"], "name": p["name"], "kind": p["kind"], "addedBy": p["added_by"],
                     "details": p["details"] or None} for p in places],
@@ -763,7 +766,7 @@ def group_state(conn, group_id, member_id):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "Bloom/1.0"
+    server_version = "Lepak/1.0"
 
     # ----- plumbing -----
     def log_message(self, fmt, *args):
@@ -894,6 +897,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(200, payload)
                 if method == "PUT" and rest == ["me"]:
                     return self.update_me(gid)
+                if method == "PUT" and rest == ["plan"]:
+                    return self.set_plan(gid)
                 if method == "POST" and rest == ["places"]:
                     return self.add_place(gid)
                 if method == "PUT" and len(rest) == 2 and rest[0] == "places":
@@ -905,7 +910,7 @@ class Handler(BaseHTTPRequestHandler):
             # The transaction was rolled back, so nothing was half-saved. Log the kind of
             # failure (redacted), never the connection string.
             self.log_error("Database error (%s): %s", type(e).__name__, redact(e, DB.url if DB else "").strip()[:300])
-            self.send_json(503, {"error": "Bloom couldn't reach its database, so nothing was saved. Try again in a moment."})
+            self.send_json(503, {"error": "Lepak couldn't reach its database, so nothing was saved. Try again in a moment."})
         except Exception as e:  # pragma: no cover - last-resort safety net
             self.log_error("API error: %r", e)
             self.send_json(500, {"error": "Something went wrong on the server"})
@@ -982,7 +987,7 @@ class Handler(BaseHTTPRequestHandler):
         avail = votes = None
         if "avail" in body:
             avail = body["avail"]
-            if not isinstance(avail, list) or len(avail) > 200 or not all(isinstance(s, str) and SLOT_RE.match(s) for s in avail):
+            if not isinstance(avail, list) or len(avail) > 500 or not all(isinstance(s, str) and SLOT_RE.match(s) for s in avail):
                 raise ApiError(400, "Invalid availability")
         if "votes" in body:
             votes = body["votes"]
@@ -992,14 +997,45 @@ class Handler(BaseHTTPRequestHandler):
         with DB.transaction() as conn:
             member_id = self.auth(conn, gid)
             if votes is not None:
-                # Real groups only vote on places their members suggested.
+                # Real groups only vote on places their members suggested, or on a tied time.
                 allowed = {r["id"] for r in conn.execute("SELECT id FROM places WHERE group_id=%s", (gid,))}
-                if not set(votes) <= allowed:
+                if not all(k in allowed or TIME_VOTE_RE.match(k) for k in votes) or len(votes) > 300:
                     raise ApiError(400, "Invalid votes")
             if avail is not None:
                 conn.execute("UPDATE members SET avail=%s, updated_at=%s WHERE id=%s", (Jsonb(sorted(set(avail))), now(), member_id))
             if votes is not None:
                 conn.execute("UPDATE members SET votes=%s, updated_at=%s WHERE id=%s", (Jsonb(votes), now(), member_id))
+            payload = group_state(conn, gid, member_id)
+        self.send_json(200, payload)
+
+    def set_plan(self, gid):
+        """The host locks in the plan for everyone ({"plan": {...}}), or reopens it ({"plan": null})."""
+        if not rate_ok(self.client_ip(), "plan", 30):
+            raise ApiError(429, "Slow down a little — try again in a minute")
+        body = self.read_body()
+        plan = body.get("plan")
+        if plan is not None:
+            if not isinstance(plan, dict):
+                raise ApiError(400, "Invalid plan")
+            date, start, end, stops = plan.get("date"), plan.get("start"), plan.get("end"), plan.get("stops")
+            if not (isinstance(date, str) and DATE_RE.match(date) and type(start) is int and type(end) is int
+                    and 0 <= start < end <= 24 and isinstance(stops, list) and 1 <= len(stops) <= 4
+                    and all(isinstance(x, str) for x in stops) and len(set(stops)) == len(stops)):
+                raise ApiError(400, "Invalid plan")
+        with DB.transaction() as conn:
+            member_id = self.auth(conn, gid)
+            host = conn.execute("SELECT is_host FROM members WHERE id=%s", (member_id,)).fetchone()
+            if not host or not host["is_host"]:
+                raise ApiError(403, "Only the host can lock in the plan")
+            if plan is not None:
+                members = conn.execute("SELECT COUNT(*) AS n FROM members WHERE group_id=%s", (gid,)).fetchone()["n"]
+                if members < MIN_GROUP:
+                    raise ApiError(400, f"Plans are for {MIN_GROUP} or more people — invite a few more friends first")
+                known = {r["id"] for r in conn.execute("SELECT id FROM places WHERE group_id=%s", (gid,))}
+                if not set(plan["stops"]) <= known:
+                    raise ApiError(400, "Pick places the group suggested")
+                plan = {"date": plan["date"], "start": plan["start"], "end": plan["end"], "stops": plan["stops"], "lockedAt": now()}
+            conn.execute("UPDATE groups SET final_plan=%s WHERE id=%s", (Jsonb(plan) if plan is not None else None, gid))
             payload = group_state(conn, gid, member_id)
         self.send_json(200, payload)
 
@@ -1156,9 +1192,9 @@ def main():
     try:
         init_database()
     except DatabaseConfigError as e:
-        sys.exit(f"Bloom can't start: {e}")
+        sys.exit(f"Lepak can't start: {e}")
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"Bloom is running at http://localhost:{PORT}  (database: PostgreSQL at {DB.describe()})")
+    print(f"Lepak is running at http://localhost:{PORT}  (database: PostgreSQL at {DB.describe()})")
     idx = None if GOOGLE_KEY else placesearch.load()
     print("Place search: " + ("Google Places" if GOOGLE_KEY else "free (Photon + OpenStreetMap, no key needed)"))
     if not GOOGLE_KEY:

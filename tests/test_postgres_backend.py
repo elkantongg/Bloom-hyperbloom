@@ -123,7 +123,8 @@ class ApiTest(unittest.TestCase):
         g = self.create()
         self.assertEqual(set(g), {"groupId", "memberId", "token", "state"})
         st = g["state"]
-        self.assertEqual(st["group"], {"id": g["groupId"], "title": "Weekend hangout", "host": "Alex", "startDate": "2026-10-19"})
+        self.assertEqual(st["group"], {"id": g["groupId"], "title": "Weekend hangout", "host": "Alex", "startDate": "2026-10-19",
+                                       "plan": None})  # no plan until the host locks one in
         self.assertEqual(st["me"], g["memberId"])
         self.assertEqual(st["places"], [])
         self.assertEqual(st["members"], [{"id": g["memberId"], "name": "Alex", "color": server.COLORS[0],
@@ -234,6 +235,37 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.api.call("PUT", f"/api/groups/{gid}/me", {"votes": {pid: True}}, token=host)[0], 400)
         st = self.api.call("GET", f"/api/groups/{gid}/state", token=host)[1]
         self.assertEqual([m["votes"] for m in st["members"]], [{pid: -1}, {pid: 1}])
+        # Votes on a tied time are allowed alongside place votes; other keys aren't.
+        tv = "t:2026-10-27@19-21"
+        status, st = self.api.call("PUT", f"/api/groups/{gid}/me", {"votes": {pid: 1, tv: 1}}, token=maya["token"])
+        self.assertEqual((status, st["members"][1]["votes"]), (200, {pid: 1, tv: 1}))
+        self.assertEqual(self.api.call("PUT", f"/api/groups/{gid}/me", {"votes": {"t:soon": 1}}, token=maya["token"])[0], 400)
+
+    def test_host_locks_in_the_plan_for_everyone(self):
+        g = self.create()
+        gid, host = g["groupId"], g["token"]
+        maya = self.join(gid, "Maya")[1]
+        st = self.api.call("POST", f"/api/groups/{gid}/places", {"name": "Lantern Noodle Bar", "kind": "food"}, token=maya["token"])[1]
+        pid = st["places"][0]["id"]
+        self.assertIsNone(st["group"]["plan"])
+        plan = {"date": "2026-10-31", "start": 15, "end": 18, "stops": [pid]}
+        # Only the host can lock it in, and only with real places and a sane time.
+        self.assertEqual(self.api.call("PUT", f"/api/groups/{gid}/plan", {"plan": plan}, token=maya["token"])[0], 403)
+        self.assertEqual(self.api.call("PUT", f"/api/groups/{gid}/plan", {"plan": dict(plan, stops=["p_nope"])}, token=host)[0], 400)
+        self.assertEqual(self.api.call("PUT", f"/api/groups/{gid}/plan", {"plan": dict(plan, start=18, end=15)}, token=host)[0], 400)
+        self.assertEqual(self.api.call("PUT", f"/api/groups/{gid}/plan", {"plan": dict(plan, date="soon")}, token=host)[0], 400)
+        # Plans are for 3 or more people.
+        self.assertEqual(self.api.call("PUT", f"/api/groups/{gid}/plan", {"plan": plan}, token=host)[0], 400)
+        self.join(gid, "Jun")
+        status, st = self.api.call("PUT", f"/api/groups/{gid}/plan", {"plan": plan}, token=host)
+        self.assertEqual(status, 200)
+        self.assertEqual({k: st["group"]["plan"][k] for k in plan}, plan)
+        # Everyone sees the same locked plan...
+        seen = self.api.call("GET", f"/api/groups/{gid}/state", token=maya["token"])[1]["group"]["plan"]
+        self.assertEqual(seen["stops"], [pid])
+        # ...until the host reopens it.
+        st = self.api.call("PUT", f"/api/groups/{gid}/plan", {"plan": None}, token=host)[1]
+        self.assertIsNone(st["group"]["plan"])
 
     def test_editing_places(self):
         g = self.create()

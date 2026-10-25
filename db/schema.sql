@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS places (
 );
 CREATE INDEX IF NOT EXISTS places_by_group ON places(group_id);
 
+-- The plan the host locked in for everyone (date, hours, places), or NULL while the
+-- group is still deciding. Added after launch, so it's added if missing.
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS final_plan JSONB;
+
 -- Supabase exposes the public schema through its REST API. Row level security with
 -- no policies means the browser keys (anon/authenticated) can't read or change these
 -- tables at all; only the Bloom server's own database login (the table owner) can.

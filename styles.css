@@ -204,7 +204,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 96px; }
 .friend-chip .av { width: 26px; height: 26px; font-size: 12px; border: 0; }
 
 .hero-art { position: relative; display: grid; place-items: center; }
-.hero-art .flower { width: min(420px, 100%); }
+.hero-art .couch { width: min(420px, 100%); }
 .floating {
   position: absolute; background: var(--surface); border: 1px solid var(--line);
   border-radius: 16px; padding: 10px 14px; box-shadow: var(--shadow);
@@ -227,21 +227,54 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 96px; }
 .how p { color: var(--muted); font-size: 15px; }
 .how ol, ol.how { padding: 0; margin-top: 56px; }
 
-/* Hero mark: three schedules overlapping */
-.hero-mark { width: min(440px, 100%); overflow: visible; }
-.hero-mark .ring { fill-opacity: .55; stroke: #fff; stroke-opacity: .7; stroke-width: 3; transform-box: fill-box; transform-origin: center; }
-.hero-mark .r1 { animation: drift1 7s ease-in-out infinite; }
-.hero-mark .r2 { animation: drift2 7s ease-in-out infinite; }
-.hero-mark .r3 { animation: drift3 7s ease-in-out infinite; }
-.hero-mark .spark { transform-box: fill-box; transform-origin: center; animation: spark 7s ease-in-out infinite; }
-.hero-mark .glow { animation: glow 7s ease-in-out infinite; }
+/* Hero mark: L-E-P-A-K drop onto the couch one by one and bounce till they're comfy (7 s loop) */
+.hero-mark { width: min(520px, 100%); overflow: visible; }
+.hero-mark .hm-back { fill: color-mix(in srgb, var(--accent) 55%, var(--surface-2)); }
+.hero-mark .hm-arm { fill: color-mix(in srgb, var(--accent) 72%, var(--surface-2)); }
+.hero-mark .hm-seat { fill: color-mix(in srgb, var(--accent) 40%, var(--surface-2)); transform-box: fill-box; transform-origin: 50% 100%; animation: hm-squish 7s ease-in-out infinite; }
+.hero-mark .hm-leg { fill: color-mix(in srgb, var(--ink) 45%, var(--surface)); }
+.hero-mark .hm-friend { animation: hm-drop 7s ease-in-out infinite both; }
+.hero-mark .hm-body { transform-box: fill-box; transform-origin: 50% 100%; animation: hm-comfy 7s ease-in-out infinite both; }
+.hero-mark .f2, .hero-mark .f2 .hm-body { animation-delay: .35s; }
+.hero-mark .f3, .hero-mark .f3 .hm-body { animation-delay: .7s; }
+.hero-mark .f4, .hero-mark .f4 .hm-body { animation-delay: 1.05s; }
+.hero-mark .f5, .hero-mark .f5 .hm-body { animation-delay: 1.4s; }
+.hero-mark .hm-spark { transform-box: fill-box; transform-origin: center; animation: hm-spark 7s ease-in-out infinite; }
 /* Save CPU/GPU: stop looping animations when they're off-screen. */
 .hero-art.paused .floating, .hero-art.paused .hero-mark * { animation-play-state: paused; }
-@keyframes drift1 { 0%, 100% { transform: translate(0, -26px); } 45%, 60% { transform: translate(0, 0); } }
-@keyframes drift2 { 0%, 100% { transform: translate(-24px, 16px); } 45%, 60% { transform: translate(0, 0); } }
-@keyframes drift3 { 0%, 100% { transform: translate(24px, 16px); } 45%, 60% { transform: translate(0, 0); } }
-@keyframes spark { 0%, 30% { transform: scale(.4) rotate(0deg); opacity: .5; } 50% { transform: scale(1.15) rotate(90deg); opacity: 1; } 70%, 100% { transform: scale(.4) rotate(180deg); opacity: .5; } }
-@keyframes glow { 0%, 30%, 100% { opacity: 0; } 50% { opacity: 1; } }
+/* Drop in, bounce twice (smaller each time), sit, then hop off before the loop restarts */
+@keyframes hm-drop {
+  0%, 3% { translate: 0 -170px; opacity: 0; }
+  8% { opacity: 1; }
+  15% { translate: 0 0; animation-timing-function: ease-out; }
+  19% { translate: 0 -18px; animation-timing-function: ease-in; }
+  23% { translate: 0 0; animation-timing-function: ease-out; }
+  25.5% { translate: 0 -6px; animation-timing-function: ease-in; }
+  28%, 82% { translate: 0 0; opacity: 1; }
+  92%, 100% { translate: 0 -30px; opacity: 0; }
+}
+/* A little squash on each landing, then settle in */
+@keyframes hm-comfy {
+  0%, 14% { scale: 1 1; }
+  15.5% { scale: 1.12 .84; }
+  18% { scale: .96 1.05; }
+  23.5% { scale: 1.06 .92; }
+  26% { scale: 1 1; }
+  100% { scale: 1 1; }
+}
+/* The cushion dips under each friend as they land */
+@keyframes hm-squish { 0%, 13%, 18%, 23%, 28%, 33%, 38%, 100% { scale: 1 1; } 15.5%, 20.5%, 25.5%, 30.5%, 35.5% { scale: 1 .92; } }
+@keyframes hm-spark { 0%, 42% { scale: 0; rotate: 0deg; opacity: 0; } 52% { scale: 1.1; rotate: 90deg; opacity: 1; } 75% { scale: .9; rotate: 180deg; opacity: 1; } 85%, 100% { scale: 0; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .hero-mark * { animation: none !important; } .hero-mark .hm-spark { opacity: 1; } }
+.pref-calm .hero-mark * { animation: none !important; }
+
+/* Header mark: a little "plop" when the page loads and on hover, like someone sitting down */
+.brand-mark { display: block; flex: 0 0 auto; }
+.brand-mark .bm-couch { transform-box: fill-box; transform-origin: 50% 100%; animation: bm-plop .7s cubic-bezier(.34, 1.45, .55, 1) .2s both; }
+.brand:hover .bm-couch { animation: bm-plop .6s cubic-bezier(.34, 1.45, .55, 1); }
+@keyframes bm-plop { 0% { scale: 1 1; } 30% { scale: 1.08 .82; } 60% { scale: .96 1.06; } 100% { scale: 1 1; } }
+@media (prefers-reduced-motion: reduce) { .brand-mark .bm-couch, .brand:hover .bm-couch { animation: none; } }
+.pref-calm .brand-mark .bm-couch { animation: none; }
 
 .wx { font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 10px; background: var(--surface-2); }
 .wx.warn { background: color-mix(in srgb, var(--gold) 28%, var(--surface)); }
@@ -286,8 +319,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 96px; }
 }
 
 .side { position: sticky; top: 88px; display: grid; gap: 16px; }
-.side .flower-wrap { display: grid; place-items: center; position: relative; }
-.side .flower { width: 190px; }
+.side .couch-wrap { display: grid; place-items: center; position: relative; }
+.side .couch { width: 200px; }
 .bloom-meter { text-align: center; }
 .bloom-meter strong { font: 800 32px "Bricolage Grotesque", sans-serif; }
 .bloom-meter span { display: block; color: var(--muted); font-size: 13px; }
@@ -300,17 +333,19 @@ main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 96px; }
 .progress i { display: block; height: 100%; width: var(--p, 0%); background: var(--c, var(--accent)); border-radius: 4px; transition: width .5s ease; }
 .demo-note { font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 12px; margin-top: 4px; }
 
-/* ---------- Flower ---------- */
-.flower { display: block; overflow: visible; }
-.flower .petal {
+/* ---------- The couch (group progress) ---------- */
+.couch { display: block; overflow: visible; }
+.couch .c-back { fill: color-mix(in srgb, var(--accent) 38%, var(--surface-2)); }
+.couch .c-arm { fill: color-mix(in srgb, var(--accent) 52%, var(--surface-2)); }
+.couch .c-seat { fill: color-mix(in srgb, var(--accent) 26%, var(--surface-2)); }
+.couch .c-leg { fill: color-mix(in srgb, var(--ink) 45%, var(--surface)); }
+.couch .seat-empty { fill: none; stroke: color-mix(in srgb, var(--ink) 35%, transparent); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.couch .sitter {
   transform-box: fill-box; transform-origin: 50% 100%;
-  transform: scale(var(--s, .2));
-  transition: transform .9s cubic-bezier(.34, 1.45, .55, 1), opacity .4s;
+  transform: scale(var(--s, 0));
+  transition: transform .9s cubic-bezier(.34, 1.45, .55, 1);
 }
-.flower .petal.bud { opacity: .35; }
-.flower .core { transition: r .8s cubic-bezier(.34, 1.45, .55, 1); }
-.flower .leaf { fill: color-mix(in srgb, var(--good) 70%, var(--surface)); }
-.flower .stem { stroke: color-mix(in srgb, var(--good) 70%, var(--surface)); }
+.couch .sitter text { fill: #fff; font-weight: 700; font-family: Inter, sans-serif; text-anchor: middle; }
 
 /* ---------- Invite bar ---------- */
 .invite {
@@ -460,7 +495,8 @@ kbd {
 
 /* ---------- Bloom step ---------- */
 .bloom-stage { display: grid; grid-template-columns: .9fr 1.1fr; gap: 40px; align-items: center; }
-.bloom-stage .flower { width: min(400px, 100%); margin: 0 auto; }
+.bloom-stage > * { min-width: 0; } /* columns shrink to the screen instead of stretching to their content */
+.bloom-stage .couch { width: min(420px, 100%); margin: 0 auto; }
 .plan-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: 28px;
   box-shadow: var(--shadow); overflow: hidden;
@@ -524,16 +560,16 @@ kbd {
 
 /* ---------- Responsive ---------- */
 @media (max-width: 960px) {
-  .hero, .bloom-stage, .places-layout { grid-template-columns: 1fr; }
+  .hero, .bloom-stage, .places-layout { grid-template-columns: minmax(0, 1fr); }
   .hero { min-height: 0; gap: 32px; }
   .hero-art { order: -1; }
-  .hero-art .flower, .hero-mark { width: 240px; }
+  .hero-art .couch, .hero-mark { width: min(340px, 100%); }
   .floating { display: none; }
   .how { grid-template-columns: 1fr; margin-top: 32px; }
   .layout { grid-template-columns: 1fr; gap: 18px; }
   .side { position: static; order: -1; }
-  .side .panel.group { display: grid; grid-template-columns: 96px 1fr; gap: 14px; align-items: center; }
-  .side .flower { width: 96px; }
+  .side .panel.group { display: grid; grid-template-columns: 110px 1fr; gap: 26px; align-items: center; }
+  .side .couch { width: 110px; }
   .side .bloom-meter strong { font-size: 22px; }
   .people { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
   .times-after { grid-template-columns: 1fr; }
@@ -542,7 +578,7 @@ kbd {
 }
 @media (max-width: 600px) {
   .topbar { padding: 10px 16px; gap: 10px; }
-  .brand span { display: none; }
+  .brand { font-size: 19px; gap: 6px; } /* keep the name visible beside the icon on phones */
   .stepper .lbl { display: none; }
   .stepper button { padding: 6px; }
   main { padding: 20px 16px 96px; }
@@ -551,8 +587,8 @@ kbd {
   .g-day { font-size: 10px; }
   .g-day .dom { font-size: 15px; }
   .cell { height: 28px; border-radius: 6px; }
-  .side .panel.group { grid-template-columns: 84px 1fr; padding: 14px 16px; }
-  .side .flower { width: 84px; }
+  .side .panel.group { grid-template-columns: 96px 1fr; gap: 22px; padding: 16px 18px; }
+  .side .couch { width: 96px; }
   .side .bloom-meter { text-align: left; }
   .side .bloom-meter span { display: inline; margin-left: 4px; }
   .people { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
@@ -833,7 +869,7 @@ kbd {
 .top-actions { justify-self: end; display: flex; align-items: center; gap: 12px; }
 .vote .v-ico { font-weight: 800; }
 .card-body .hours { font-size: 14px; font-weight: 600; }
-.tie-note { margin-top: 12px; text-align: center; color: var(--muted); font-size: 14px; }
+.tie-note { margin-top: 18px; color: var(--muted); font-size: 13px; }
 @media (max-width: 600px) {
   .top-actions { gap: 4px; }
   .topbar.is-home { grid-template-columns: auto 1fr; }
@@ -992,3 +1028,179 @@ kbd {
 .stops .v { font-size: 16px; }
 .stops li + li::before { content: ""; position: absolute; left: 44px; top: -12px; height: 10px; border-left: 2px dotted var(--line); }
 @media (max-width: 480px) { .stops li { grid-template-columns: 1fr; gap: 2px; } .stops li + li::before { display: none; } }
+
+/* Pick a month, then swipe through its weeks (coverflow) */
+.week-picker { margin-bottom: 12px; }
+.month-tabs { display: flex; gap: 6px; justify-content: center; margin-bottom: 8px; }
+.month-tab {
+  min-height: 36px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--line); background: transparent;
+  color: var(--muted); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; transition: background-color .2s, color .2s, border-color .2s;
+}
+.month-tab[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.week-flow {
+  display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; perspective: 700px;
+  padding: 6px calc(50% - 75px) 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.week-flow::-webkit-scrollbar { display: none; }
+.week-card {
+  flex: 0 0 150px; scroll-snap-align: center; display: grid; gap: 2px; justify-items: center; padding: 12px 10px;
+  border-radius: 16px; border: 1.5px solid var(--line); background: var(--surface-2); color: var(--ink); font: inherit; cursor: pointer;
+  transform-style: preserve-3d; transition: transform .25s ease, opacity .25s ease, background-color .2s, border-color .2s;
+}
+.week-card small { font-size: 12px; color: var(--muted); font-weight: 600; }
+.week-card strong { font-size: 16px; white-space: nowrap; }
+.week-card[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.week-card:focus-visible, .month-tab:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* The grid slides in from the side of the week you came from */
+.grid.slide-l { animation: grid-in-l .28s ease both; }
+.grid.slide-r { animation: grid-in-r .28s ease both; }
+@keyframes grid-in-l { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes grid-in-r { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+/* Best times jump to their week */
+.best-list button.when { all: unset; font-weight: 700; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; }
+.best-list button.when:hover { text-decoration-color: currentColor; }
+.best-list button.when:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+
+/* Optional extra stops: one place by default, "＋ Add a stop" if the group wants more */
+.add-stop { display: block; margin-top: 8px; }
+.add-stop select {
+  /* A fixed, compact pill: a native select would otherwise grow to its longest place name */
+  width: 128px; height: 32px; padding: 0 26px 0 12px; border-radius: 999px; border: 1.5px dashed var(--line);
+  color: var(--accent); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; text-overflow: ellipsis;
+  /* our own small chevron instead of the browser's wider arrow */
+  -webkit-appearance: none; appearance: none;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center;
+}
+.add-stop select:hover { border-color: var(--accent); }
+.add-stop select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.add-stop option { color: var(--ink); background: var(--surface); font-weight: 500; }
+/* With several stops, line it up with the place names (after the time column) */
+.stops + .add-stop { margin-left: 102px; }
+@media (max-width: 480px) { .stops + .add-stop { margin-left: 0; } }
+.stop-remove:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.stop-remove {
+  margin-left: 6px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: transparent; color: var(--muted);
+  font-size: 13px; cursor: pointer; vertical-align: middle;
+}
+.stop-remove:hover { background: var(--surface-2); color: var(--ink); }
+.stops li.stop-new { animation: stop-in .35s ease both; }
+@keyframes stop-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .stops li.stop-new, .grid.slide-l, .grid.slide-r { animation: none; } }
+.pref-calm .stops li.stop-new, .pref-calm .grid.slide-l, .pref-calm .grid.slide-r { animation: none; }
+/* Let the week carousel scroll inside its column instead of widening the page */
+.layout > section, .layout > section > .panel, .week-picker, .week-flow { min-width: 0; }
+.week-flow { width: 100%; box-sizing: border-box; position: relative; } /* card positions measured from the carousel */
+
+/* Phones: less on screen at once. Main task first, one notice at a time, no extras. */
+@media (max-width: 600px) {
+  .side { order: 1; }                       /* grid / deck first, progress panel after */
+  .zoom { display: none; }                  /* pinch-to-zoom does this on a phone */
+  .bloom-stage .couch { width: min(260px, 80%); }
+  .bloom-stage { gap: 20px; }
+  .toast { max-width: calc(100vw - 32px); }
+}
+@media (hover: none) { .kbd-hint { display: none; } } /* keyboard tips only where there's a keyboard */
+
+/* Clear sits under the grid it clears */
+.grid-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+/* "No time works for everyone yet" */
+.best-note {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 10px 0 4px; padding: 12px 14px;
+  border-radius: 14px; background: color-mix(in srgb, var(--gold) 16%, var(--surface)); font-size: 14px;
+}
+.best-note p { margin: 0; flex: 1 1 240px; }
+
+/* Tied best times: "Multiple dates available — pick your preferred" */
+.best-list li.date-option-wrap { padding: 0; background: none; border: 0; }
+.date-option {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 12px 14px; text-align: left;
+  border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer;
+  transition: border-color .2s, background-color .2s;
+}
+.date-option .grow { display: grid; gap: 2px; }
+.date-option .when { font-weight: 700; }
+.date-option .count { font-size: 13px; color: var(--muted); }
+.date-option .votes { flex: 0 0 auto; font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.radio-dot { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); position: relative; transition: border-color .2s; }
+.radio-dot::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform .2s cubic-bezier(.34, 1.45, .55, 1); }
+.date-option[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.date-option[aria-checked="true"] .radio-dot { border-color: var(--accent); }
+.date-option[aria-checked="true"] .radio-dot::after { transform: scale(1); }
+.date-option[aria-checked="true"] .votes { color: var(--accent); }
+.date-option:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.best-hint { margin: 4px 0 10px; font-size: 14px; color: var(--muted); }
+.date-option .votes { display: inline-flex; align-items: center; gap: 8px; }
+.vote-progress { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.vote-progress strong { color: var(--ink); }
+
+/* Step 3 while the host decides: everyone else waits here (nobody waits before this) */
+.wait-stage { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; text-align: center; }
+.wait-couch .couch { width: min(320px, 80%); margin: 0 auto; }
+.wait-stage .front { text-align: left; }
+.front-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.front-list li { display: flex; gap: 12px; align-items: flex-start; font-weight: 700; }
+.front-list .ico { font-size: 20px; line-height: 1.2; }
+.front-list small { display: block; font-weight: 500; font-size: 13px; color: var(--muted); }
+.wait-stage .hint { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.wait-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+/* The host's draft: same card, quieter header until it's locked in */
+.plan-card.draft header { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, var(--surface-2)), color-mix(in srgb, var(--gold) 45%, var(--surface-2))); }
+.decide { margin-bottom: 18px; display: grid; gap: 4px; }
+.decide .choice-group:first-child { margin-top: 0; }
+.lock-hint { width: 100%; margin: 0 0 4px; font-size: 13px; color: var(--muted); }
+
+/* ---------- The big reveal: "All set! You're good to go" ----------
+   Spring the couch in, drop everyone who's coming onto a seat one by one (squash, bounce,
+   settle), hop the couch, burst sparkles, rise the title word by word and cascade the plan
+   card. Then a gentle "wave" loop. All off with Calm mode or reduced motion. */
+.couch.party { overflow: visible; }
+.couch.party .c-body { transform-box: fill-box; transform-origin: 50% 100%;
+  animation: party-couch-in .8s cubic-bezier(.34, 1.56, .64, 1) .05s both, party-hop .7s ease-in-out 2.4s both; }
+.couch.party .sitter { animation: party-sit 1s cubic-bezier(.25, .8, .35, 1) calc(.55s + var(--i) * .14s) both,
+  party-wave 4.8s ease-in-out calc(3.4s + var(--i) * .12s) infinite; }
+.couch.party .sitter circle, .couch.party .sitter text { transform-box: fill-box; transform-origin: 50% 100%;
+  animation: party-squash 1s ease-out calc(.55s + var(--i) * .14s) both; }
+.couch.party .seat-empty { animation: party-fade .5s ease .4s both; }
+.couch.party .c-spark { transform-box: fill-box; transform-origin: center; opacity: 0;
+  animation: party-spark 3.6s ease-out calc(2.5s + var(--i) * .11s) infinite; }
+@keyframes party-couch-in { from { opacity: 0; translate: 0 26px; scale: .86; } to { opacity: 1; translate: 0 0; scale: 1; } }
+@keyframes party-sit {
+  0% { translate: 0 -120px; opacity: 0; }
+  12% { opacity: 1; }
+  45% { translate: 0 0; }
+  58% { translate: 0 -16px; }
+  70% { translate: 0 0; }
+  80% { translate: 0 -5px; }
+  90%, 100% { translate: 0 0; opacity: 1; }
+}
+@keyframes party-squash { 0%, 42% { scale: 1 1; } 47% { scale: 1.14 .82; } 56% { scale: .94 1.08; } 72% { scale: 1.05 .94; } 84%, 100% { scale: 1 1; } }
+@keyframes party-hop { 0%, 100% { translate: 0 0; scale: 1 1; } 20% { scale: 1.04 .93; } 45% { translate: 0 -12px; scale: .98 1.04; } 70% { translate: 0 0; scale: 1.03 .96; } }
+@keyframes party-wave { 0%, 14%, 100% { translate: 0 0; } 7% { translate: 0 -10px; } }
+@keyframes party-spark { 0% { scale: 0; rotate: 0deg; opacity: 0; } 10% { scale: 1.25; opacity: 1; } 28% { scale: .2; rotate: 140deg; opacity: 0; } 100% { scale: 0; opacity: 0; } }
+@keyframes party-fade { from { opacity: 0; } to { opacity: 1; } }
+/* Title rises in word by word */
+.bloom-title.reveal .w { display: inline-block; animation: party-word .7s cubic-bezier(.34, 1.56, .64, 1) calc(.25s + var(--i) * .08s) both; }
+@keyframes party-word { from { opacity: 0; translate: 0 .55em; filter: blur(6px); } to { opacity: 1; translate: 0 0; filter: blur(0); } }
+/* The plan card and its rows cascade in */
+[data-view="locked"] .plan-card { animation: party-card .8s cubic-bezier(.34, 1.4, .64, 1) .7s both; }
+[data-view="locked"] .plan-card header, [data-view="locked"] .plan-row, [data-view="locked"] .plan-actions { animation: party-row .55s ease-out both; }
+[data-view="locked"] .plan-card header { animation-delay: .85s; }
+[data-view="locked"] .plan-row:nth-child(1) { animation-delay: 1s; }
+[data-view="locked"] .plan-row:nth-child(2) { animation-delay: 1.1s; }
+[data-view="locked"] .plan-row:nth-child(3) { animation-delay: 1.2s; }
+[data-view="locked"] .plan-row:nth-child(4) { animation-delay: 1.3s; }
+[data-view="locked"] .plan-actions { animation-delay: 1.45s; }
+[data-view="locked"] .bloom-sub { animation: party-row .6s ease-out .75s both; }
+@keyframes party-card { from { opacity: 0; translate: 0 40px; scale: .96; } to { opacity: 1; translate: 0 0; scale: 1; } }
+@keyframes party-row { from { opacity: 0; translate: 0 14px; } to { opacity: 1; translate: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .couch.party *, .couch.party .c-body, .bloom-title.reveal .w, [data-view="locked"] .plan-card, [data-view="locked"] .plan-card *, [data-view="locked"] .bloom-sub { animation: none !important; }
+  .couch.party .c-spark { opacity: 1; }
+}
+.pref-calm .couch.party *, .pref-calm .couch.party .c-body, .pref-calm .bloom-title.reveal .w, .pref-calm [data-view="locked"] .plan-card,
+.pref-calm [data-view="locked"] .plan-card *, .pref-calm [data-view="locked"] .bloom-sub { animation: none !important; }
+.pref-calm .couch.party .c-spark { opacity: 1; }
+
+/* Header fits on mid-size screens (e.g. 670px): drop the zoom buttons, then the step names */
+@media (max-width: 900px) { .zoom { display: none; } }
+@media (max-width: 720px) { .stepper .lbl { display: none; } .stepper button { padding: 6px; } }
