@@ -14,7 +14,7 @@ export function homeHTML() {
         '<p class="lede">Don’t say never jio</p>' +
         myGroupsHTML() +
         '<form class="start-card" id="startForm" novalidate>' +
-          '<div class="field"><label for="planTitle">What’s the plan?</label>' +
+          '<div class="field"><label for="planTitle">Group Name / Plan</label>' +
             '<input id="planTitle" name="title" placeholder="e.g. Weekend hangout" maxlength="40" autocomplete="off" required></div>' +
           '<div class="field"><label for="myName">Your name</label>' +
             '<input id="myName" name="name" placeholder="e.g. John" maxlength="20" autocomplete="given-name" required></div>' +
